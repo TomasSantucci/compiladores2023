@@ -78,6 +78,7 @@ data SDecl = SDecl
   , sDeclRec  :: Bool
   , sDeclBody :: STerm}
   | SSynonym Name STy
+ deriving Show
 
 -- | AST de los términos. 
 --   - info es información extra que puede llevar cada nodo. 

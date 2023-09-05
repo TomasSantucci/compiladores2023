@@ -81,16 +81,18 @@ getPos :: P Pos
 getPos = do pos <- getPosition
             return $ Pos (sourceLine pos) (sourceColumn pos)
 
-tyatom :: P Ty
-tyatom = (reserved "Nat" >> return NatTy)
+tyatom :: P STy
+tyatom = (reserved "Nat" >> return SNatTy)
          <|> parens typeP
+         <|> do n <- identifier
+                return (SSyn n)
 
-typeP :: P Ty
+typeP :: P STy
 typeP = try (do 
           x <- tyatom
           reservedOp "->"
           y <- typeP
-          return (FunTy x y))
+          return (SFunTy x y))
       <|> tyatom
           
 const :: P Const
@@ -121,19 +123,22 @@ atom =     (flip SConst <$> const <*> getPos)
        <|> printOp
 
 -- parsea un par (variable : tipo)
-binding :: P (Name, Ty)
+binding :: P (Name, STy)
 binding = do v <- var
              reservedOp ":"
              ty <- typeP
              return (v, ty)
 
+bindings :: P [(Name, STy)]
+bindings = many1 (parens binding)
+
 lam :: P STerm
 lam = do i <- getPos
          reserved "fun"
-         (v,ty) <- parens binding
+         bs <- bindings
          reservedOp "->"
          t <- expr
-         return (SLam i (v,ty) t)
+         return (SLam i bs t)
 
 -- Nota el parser app también parsea un solo atom.
 app :: P STerm
@@ -156,13 +161,42 @@ fix :: P STerm
 fix = do i <- getPos
          reserved "fix"
          (f, fty) <- parens binding
-         (x, xty) <- parens binding
+         bs <- bindings
          reservedOp "->"
          t <- expr
-         return (SFix i (f,fty) (x,xty) t)
+         return (SFix i (f,fty) bs t)
 
-letexp :: P STerm
-letexp = do
+letexpRec :: P STerm
+letexpRec = do
+  i <- getPos
+  reserved "let"
+  reserved "rec"
+  v <- identifier
+  bs <- bindings
+  reservedOp ":"
+  ty <- typeP
+  reservedOp "="  
+  def <- expr
+  reserved "in"
+  body <- expr
+  return (SLet False True i (v,ty) bs def body)
+
+letexpFun :: P STerm
+letexpFun = do
+  i <- getPos
+  reserved "let"
+  v <- identifier
+  bs <- bindings
+  reservedOp ":"
+  ty <- typeP
+  reservedOp "="  
+  def <- expr
+  reserved "in"
+  body <- expr
+  return (SLet False False i (v,ty) bs def body)
+
+letexpParens :: P STerm
+letexpParens = do
   i <- getPos
   reserved "let"
   (v,ty) <- parens binding
@@ -170,29 +204,86 @@ letexp = do
   def <- expr
   reserved "in"
   body <- expr
-  return (SLet i (v,ty) def body)
+  return (SLet True False i (v,ty) [] def body)
+
+letexpCore :: P STerm
+letexpCore = do
+  i <- getPos
+  reserved "let"
+  (v,ty) <- binding
+  reservedOp "="  
+  def <- expr
+  reserved "in"
+  body <- expr
+  return (SLet False False i (v,ty) [] def body)
+
+letexp :: P STerm
+letexp = try letexpRec
+         <|> try letexpFun
+         <|> try letexpParens
+         <|> letexpCore
 
 -- | Parser de términos
 tm :: P STerm
 tm = app <|> lam <|> ifz <|> printOp <|> fix <|> letexp
 
 -- | Parser de declaraciones
-decl :: P (Decl STerm)
-decl = do 
+declCore :: P SDecl
+declCore = do 
+     i <- getPos
+     reserved "let"
+     (v,ty) <- binding
+     reservedOp "="
+     t <- expr
+     return (SDecl i v ty [] False t)
+
+declRec :: P SDecl
+declRec = do 
+     i <- getPos
+     reserved "let"
+     reserved "rec"
+     v <- var
+     bs <- bindings
+     reservedOp ":"
+     ty <- typeP
+     reservedOp "="
+     t <- expr
+     return (SDecl i v ty bs True t)
+
+declFun :: P SDecl
+declFun = do 
      i <- getPos
      reserved "let"
      v <- var
+     bs <- bindings
+     reservedOp ":"
+     ty <- typeP
      reservedOp "="
      t <- expr
-     return (Decl i v t)
+     return (SDecl i v ty bs False t)
+
+typeSyn :: P SDecl
+typeSyn = do
+     i <- getPos
+     reserved "type"
+     v <- var
+     reservedOp "="
+     ty <- typeP
+     return (SSynonym v ty)
+
+decl :: P SDecl
+decl = try declCore
+       <|> try declRec
+       <|> try declFun
+       <|> typeSyn
 
 -- | Parser de programas (listas de declaraciones) 
-program :: P [Decl STerm]
+program :: P [SDecl]
 program = many decl
 
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
-declOrTm :: P (Either (Decl STerm) STerm)
+declOrTm :: P (Either (SDecl) STerm)
 declOrTm =  try (Left <$> decl) <|> (Right <$> expr)
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada
