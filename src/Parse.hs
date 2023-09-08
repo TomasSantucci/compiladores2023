@@ -269,7 +269,7 @@ typeSyn = do
      v <- var
      reservedOp "="
      ty <- typeP
-     return (SSynonym v ty)
+     return (SDefType i v ty)
 
 decl :: P SDecl
 decl = try declCore

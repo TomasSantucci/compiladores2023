@@ -26,6 +26,8 @@ module MonadFD4 (
   getLastFile,
   setInter,
   getInter,
+  getSynonyms,
+  addSynonym,
   getMode,
   getOpt,
   eraseLastFileDecls,
@@ -77,6 +79,12 @@ setInter b = modify (\s-> s {inter = b})
 
 getInter :: MonadFD4 m => m Bool
 getInter = gets inter
+
+getSynonyms :: MonadFD4 m => m [(Name,Ty)]
+getSynonyms = gets synonyms
+
+addSynonym :: MonadFD4 m => Name -> Ty -> m ()
+addSynonym n ty = modify (\s -> s { synonyms = ((n,ty):(synonyms s)) })
 
 printFD4 :: MonadFD4 m => String -> m ()
 printFD4 = liftIO . putStrLn

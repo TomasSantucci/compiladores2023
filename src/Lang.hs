@@ -30,6 +30,7 @@ data STm info ty var =
   | SLam info [(var, ty)] (STm info ty var)
   | SApp info (STm info ty var) (STm info ty var)
   | SPrint info String (STm info ty var)
+--  | SPrintFun info String TODO
   | SBinaryOp info BinaryOp (STm info ty var) (STm info ty var)
   | SFix info (var, ty) [(var, ty)] (STm info ty var)
   | SIfZ info (STm info ty var) (STm info ty var) (STm info ty var)
@@ -38,9 +39,19 @@ data STm info ty var =
 
 -- | AST de Tipos
 data Ty =
-      NatTy
-    | FunTy Ty Ty
-    deriving (Show,Eq)
+      NatTy (Maybe Name)
+    | FunTy Ty Ty (Maybe Name)
+    deriving Show
+  
+compareTypes :: Ty -> Ty -> Bool
+compareTypes (NatTy _) (NatTy _) = True
+compareTypes (FunTy _ _ _) (NatTy _) = False
+compareTypes (NatTy _) (FunTy _ _ _) = False
+compareTypes (FunTy t1 t2 _) (FunTy t3 t4 _) =
+  (compareTypes t1 t3) && (compareTypes t2 t4)
+
+instance Eq Ty where
+  t1 == t2 = compareTypes t1 t2
 
 type HasParens = Bool
 
@@ -66,6 +77,7 @@ data BinaryOp = Add | Sub
 data Decl a = Decl
   { declPos  :: Pos
   , declName :: Name
+  , declType :: Ty
   , declBody :: a
   }
   deriving (Show, Functor)
@@ -77,7 +89,7 @@ data SDecl = SDecl
   , sDeclArgs :: [(Name,STy)]
   , sDeclRec  :: Bool
   , sDeclBody :: STerm}
-  | SSynonym Name STy
+  | SDefType Pos Name STy
  deriving Show
 
 -- | AST de los términos. 
