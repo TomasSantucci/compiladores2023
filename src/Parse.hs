@@ -106,6 +106,13 @@ printOp = do
   a <- atom
   return (SPrint i str a)
 
+printOpFun :: P STerm
+printOpFun = do
+  i <- getPos
+  reserved "print"
+  str <- option "" stringLiteral
+  return (SPrintFun i str)
+
 binary :: String -> BinaryOp -> Assoc -> Operator String () Identity STerm
 binary s f = Ex.Infix (reservedOp s >> return (SBinaryOp NoPos f))
 
@@ -218,14 +225,20 @@ letexpCore = do
   return (SLet False False i (v,ty) [] def body)
 
 letexp :: P STerm
-letexp = try letexpRec
+letexp = try letexpCore
          <|> try letexpFun
          <|> try letexpParens
-         <|> letexpCore
+         <|> try letexpRec
 
 -- | Parser de términos
 tm :: P STerm
-tm = app <|> lam <|> ifz <|> printOp <|> fix <|> letexp
+tm = try letexp
+     <|> try app
+     <|> try lam
+     <|> try ifz
+     <|> try printOp
+     <|> try printOpFun
+     <|> fix
 
 -- | Parser de declaraciones
 declCore :: P SDecl
@@ -272,10 +285,10 @@ typeSyn = do
      return (SDefType i v ty)
 
 decl :: P SDecl
-decl = try declCore
+decl = try declCore 
        <|> try declRec
        <|> try declFun
-       <|> typeSyn
+       <|> try typeSyn
 
 -- | Parser de programas (listas de declaraciones) 
 program :: P [SDecl]
@@ -283,8 +296,8 @@ program = many decl
 
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
-declOrTm :: P (Either (SDecl) STerm)
-declOrTm =  try (Left <$> decl) <|> (Right <$> expr)
+declOrTm :: P (Either SDecl STerm)
+declOrTm =  try (Right <$> expr) <|> (Left <$> decl)
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada
 runP :: P a -> String -> String -> Either ParseError a

@@ -32,14 +32,14 @@ tc (V p (Free n)) bs = case lookup n bs of
 tc (V p (Global n)) bs = case lookup n bs of
                            Nothing -> failPosFD4 p $ "Variable no declarada "++ppName n
                            Just ty -> return (V (p,ty) (Global n))
-tc (Const p (CNat n)) _ = return (Const (p,NatTy) (CNat n))
+tc (Const p (CNat n)) _ = return (Const (p,NatTy Nothing) (CNat n))
 tc (Print p str t) bs = do 
       tt <- tc t bs
-      expect NatTy tt
-      return (Print (p, NatTy) str tt)
+      expect (NatTy Nothing) tt
+      return (Print (p, NatTy Nothing) str tt)
 tc (IfZ p c t t') bs = do
        ttc  <- tc c bs
-       expect NatTy ttc
+       expect (NatTy Nothing) ttc
        tt  <- tc t bs
        tt' <- tc t' bs
        let ty = getTy tt
@@ -47,7 +47,7 @@ tc (IfZ p c t t') bs = do
        return (IfZ (p,ty) ttc tt tt')
 tc (Lam p v ty t) bs = do
          tt <- tc (open v t) ((v,ty):bs)
-         return (Lam (p, FunTy ty (getTy tt)) v ty (close v tt))
+         return (Lam (p, FunTy ty (getTy tt) Nothing) v ty (close v tt))
 tc (App p t u) bs = do
          tt <- tc t bs
          (dom,cod) <- domCod tt
@@ -70,10 +70,10 @@ tc (Let p v ty def t) bs = do
          return (Let (p,getTy tt) v ty tdef (close v tt))
 tc (BinaryOp p op t u) bs = do
          tt <- tc t bs
-         expect NatTy tt
+         expect (NatTy Nothing) tt
          tu <- tc u bs
-         expect NatTy tu
-         return (BinaryOp (p,NatTy) op tt tu)
+         expect (NatTy Nothing) tu
+         return (BinaryOp (p,NatTy Nothing) op tt tu)
 
 -- | @'typeError' t s@ lanza un error de tipo para el término @t@ 
 typeError :: MonadFD4 m => TTerm   -- ^ término que se está chequeando  
@@ -98,8 +98,8 @@ expect ty tt = let ty' = getTy tt
 -- | devuelve un par con el tipo del dominio y el codominio de la función
 domCod :: MonadFD4 m => TTerm -> m (Ty, Ty)
 domCod tt = case getTy tt of
-    FunTy d c -> return (d, c)
-    _         -> typeError tt $ "Se esperaba un tipo función, pero se obtuvo: " ++ ppTy (getTy tt)
+    FunTy d c _ -> return (d, c)
+    _           -> typeError tt $ "Se esperaba un tipo función, pero se obtuvo: " ++ ppTy (getTy tt)
 
 -- | 'tcDecl' chequea el tipo de una declaración
 -- y la agrega al entorno de tipado de declaraciones globales
@@ -110,7 +110,7 @@ tcDecl (Decl p n ty t) = do
     case mty of
         Nothing -> do  --no está declarado 
                   s <- get
-                  tt <- tc t (tyEnv s) 
-                  expect (coreTy ty) tt
-                  return (Decl p n tt)
+                  tt <- tc t (tyEnv s)
+                  expect ty tt
+                  return (Decl p n ty tt) -- TODO hacer setTy a tt
         Just _  -> failPosFD4 p $ n ++" ya está declarado"

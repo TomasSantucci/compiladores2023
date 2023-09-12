@@ -30,7 +30,7 @@ import Global
 import Errors
 import Lang
 import Parse ( P, tm, program, declOrTm, runP )
-import Elab ( elab )
+import Elab ( elab, elabDecl )
 import Eval ( eval )
 import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
@@ -127,19 +127,19 @@ parseIO filename p x = case runP p x filename of
                   Left e  -> throwError (ParseErr e)
                   Right r -> return r
 
-handleDecl ::  MonadFD4 m => Decl STerm -> m ()
-handleDecl d = do
-  d' <- elabDecl d
+handleDecl ::  MonadFD4 m => SDecl -> m ()
+handleDecl dec = do
+  d' <- elabDecl dec
   case d' of
     Nothing -> return ()
-    Just dd@(Decl p x t) -> handleDecl' dd
+    Just dd@(Decl p x ty t) -> handleDecl' dd
   where 
     handleDecl' d = do m <- getMode
                        case m of
                          Interactive -> do
-                             (Decl p x tt) <- tcDecl d
+                             (Decl p x ty tt) <- tcDecl d
                              te <- eval tt
-                             addDecl (Decl p x te)
+                             addDecl (Decl p x ty te)
                          Typecheck -> do
                              f <- getLastFile
                              printFD4 ("Chequeando tipos de "++f)
@@ -234,7 +234,7 @@ compilePhrase x = do
 
 handleTerm ::  MonadFD4 m => STerm -> m ()
 handleTerm t = do
-         let t' = elab syns t
+         t' <- elab t
          s <- get
          tt <- tc t' (tyEnv s)
          te <- eval tt

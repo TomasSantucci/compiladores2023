@@ -30,7 +30,7 @@ data STm info ty var =
   | SLam info [(var, ty)] (STm info ty var)
   | SApp info (STm info ty var) (STm info ty var)
   | SPrint info String (STm info ty var)
---  | SPrintFun info String TODO
+  | SPrintFun info String
   | SBinaryOp info BinaryOp (STm info ty var) (STm info ty var)
   | SFix info (var, ty) [(var, ty)] (STm info ty var)
   | SIfZ info (STm info ty var) (STm info ty var) (STm info ty var)
@@ -108,7 +108,6 @@ data Tm info var =
   | Let info Name Ty (Tm info var)  (Scope info var)
   deriving (Show, Functor)
 
-
 type Term = Tm Pos Var       -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición
 type TTerm = Tm (Pos,Ty) Var -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición y tipo
 
@@ -147,6 +146,17 @@ getTy = snd . getInfo
 
 getPos :: TTerm -> Pos
 getPos = fst . getInfo
+
+--setTy :: Ty -> TTerm -> TTerm
+--setTy ty (V (p,ty') x) = V (p,ty) x
+--mapInfo f (Const i x) = Const (f i) x
+--mapInfo f (Lam i x ty (Sc1 y)) = Lam (f i) x ty (Sc1 $ mapInfo f y)
+--mapInfo f (App i x y ) = App (f i) (mapInfo f x) (mapInfo f y)
+--mapInfo f (Print i msg y) = Print (f i) msg (mapInfo f y)
+--mapInfo f (BinaryOp i x y z ) = BinaryOp (f i) x (mapInfo f y) (mapInfo f z)
+--mapInfo f (Fix i x xty y yty (Sc2 z)) = Fix (f i) x xty y yty (Sc2 $ mapInfo f z)
+--mapInfo f (IfZ i x y z) = IfZ (f i) (mapInfo f x) (mapInfo f y) (mapInfo f z)
+--mapInfo f (Let i x xty y (Sc1 z)) = Let (f i) x xty (mapInfo f y) (Sc1 $ mapInfo f z)
 
 -- | map para la info de un término
 mapInfo :: (a -> b) -> Tm a var -> Tm b var

@@ -95,3 +95,7 @@ close2 nm1 nm2 t = Sc2 (varChanger lcl (\_ p i -> V p (Bound i)) t)
   where lcl depth p y | y == nm2 = V p (Bound depth)
                       | y == nm1 = V p (Bound (depth + 1))
                       | otherwise = V p (Free y)
+
+freshen :: [Name] -> Name -> Name
+freshen ns n = let cands = n : map (\i -> n ++ show i) [0..] 
+               in head (filter (`notElem` ns) cands)

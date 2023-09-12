@@ -69,6 +69,11 @@ elab' env (SBinaryOp i o t u) = do
 elab' env (SPrint i str t) = do
   t' <- elab' env t
   return $ Print i str t'
+
+elab' env (SPrintFun i str) = do
+  let var = freshen env "x"
+  elab' env $ (SLam i [(var,SNatTy)] (SPrint i str (SV i var)))
+
 -- Aplicaciones generales
 elab' env (SApp p h a) = do
   t1 <- (elab' env h)
@@ -128,12 +133,16 @@ getFunSType (t:ts) sty = do
   ts' <- getFunSType ts sty
   return $ SFunTy t ts'
 
+writeSynonym:: Ty -> Name -> Ty
+writeSynonym (NatTy _) s = NatTy (Just s)
+writeSynonym (FunTy t1 t2 _) s = FunTy t1 t2 (Just s)
+
 elabDecl :: (MonadFD4 m) => SDecl -> m (Maybe (Decl Term))
 elabDecl (SDefType p n sty) = do
   s <- getSynonyms
   case lookup n s of
     Nothing -> do ty <- elabTy p sty
-                  addSynonym n ty
+                  addSynonym n (writeSynonym ty n)
     Just _ -> failPosFD4 p ("Type " ++ n ++ " already defined.")
   return Nothing
 
