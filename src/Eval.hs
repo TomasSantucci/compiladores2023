@@ -17,11 +17,6 @@ import Subst ( subst2, subst )
 import MonadFD4 ( MonadFD4, lookupDecl, failFD4, printFD4 )
 import PPrint ( ppName, pp )
 
--- | Semántica de operadores binarios
-semOp :: BinaryOp -> Int -> Int -> Int
-semOp Add x y=  x + y
-semOp Sub x y = max 0 (x - y)
-
 -- | Evaluador de términos CBV
 eval ::  MonadFD4 m => TTerm -> m TTerm
 eval (V _ (Global nm)) = do

@@ -32,6 +32,7 @@ import Lang
 import Parse ( P, tm, program, declOrTm, runP )
 import Elab ( elab, elabDecl )
 import Eval ( eval )
+import CEK ( evalCEK )
 import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
@@ -45,7 +46,7 @@ prompt = "FD4> "
 parseMode :: Parser (Mode,Bool)
 parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
-  -- <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
+      <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
   -- <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
   -- <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
@@ -71,6 +72,8 @@ main = execParser opts >>= go
      <> header "Compilador de FD4 de la materia Compiladores 2022" )
 
     go :: (Mode,Bool,[FilePath]) -> IO ()
+    go (InteractiveCEK,opt,files) =
+              runOrFail (Conf opt InteractiveCEK) (runInputT defaultSettings (repl files))
     go (Interactive,opt,files) =
               runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
     go (m,opt, files) =
@@ -136,6 +139,10 @@ handleDecl dec = do
   where 
     handleDecl' d = do m <- getMode
                        case m of
+                         InteractiveCEK -> do
+                             (Decl p x ty tt) <- tcDecl d
+                             te <- evalCEK tt
+                             addDecl (Decl p x ty te)
                          Interactive -> do
                              (Decl p x ty tt) <- tcDecl d
                              te <- eval tt
@@ -230,14 +237,19 @@ compilePhrase x = do
     dot <- parseIO "<interactive>" declOrTm x
     case dot of
       Left d  -> handleDecl d
-      Right t -> handleTerm t
+      Right t -> do
+        m <- getMode
+        handleTerm t (evalFun m)
+  where evalFun Interactive = eval
+        evalFun InteractiveCEK = evalCEK
+        evalFun _ = eval
 
-handleTerm ::  MonadFD4 m => STerm -> m ()
-handleTerm t = do
+handleTerm ::  MonadFD4 m => STerm -> (TTerm -> m TTerm)-> m ()
+handleTerm t evalFun = do
          t' <- elab t
          s <- get
          tt <- tc t' (tyEnv s)
-         te <- eval tt
+         te <- evalFun tt
          ppte <- pp te
          printFD4 (ppte ++ " : " ++ ppTy (getTy tt))
 

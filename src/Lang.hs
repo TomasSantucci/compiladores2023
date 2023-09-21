@@ -129,6 +129,12 @@ instance (Show info, Show var) => Show (Scope info var) where
 instance (Show info, Show var) => Show (Scope2 info var) where
     show (Sc2 t) = "{{"++show t++"}}"
 
+
+-- | Semántica de operadores binarios
+semOp :: BinaryOp -> Int -> Int -> Int
+semOp Add x y=  x + y
+semOp Sub x y = max 0 (x - y)
+
 -- | Obtiene la info en la raíz del término.
 getInfo :: Tm info var -> info
 getInfo (V     i _       ) = i
