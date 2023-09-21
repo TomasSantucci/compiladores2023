@@ -33,7 +33,7 @@ import Prettyprinter
       sep,
       parens,
       Doc,
-      Pretty(pretty) )
+      Pretty(pretty), emptyDoc )
 import MonadFD4 ( gets, MonadFD4 )
 import Global ( GlEnv(glb) )
 
@@ -179,6 +179,10 @@ t2doc at (SPrint _ str t) =
   parenIf at $
   sep [keywordColor (pretty "print"), pretty (show str), t2doc True t]
 
+t2doc at (SPrintFun _ str) =
+  parenIf at $
+  sep [keywordColor (pretty "print"), pretty (show str)]
+
 t2doc at (SLet hasparens _ _ (v,ty) [] t t') =
   parenIf at $
   sep [
@@ -217,7 +221,7 @@ sbinding2doc at (x, ty) =
   parenIf at (sep [name2doc x, pretty ":", sty2doc ty])
 
 sbindings2doc :: [(Name, STy)] -> Doc AnsiStyle
-sbindings2doc [(x, ty)] = sbinding2doc True (x, ty)
+sbindings2doc [] = emptyDoc
 sbindings2doc ((x, ty):bs) =
   sep [ sbinding2doc True (x,ty), sbindings2doc bs]
 
@@ -240,5 +244,3 @@ ppDecl (Decl p x ty t) = do
                        , binding2doc False (x,ty)
                        , defColor (pretty "=")] 
                    <+> nest 2 (t2doc False (openAll fst (map declName gdecl) t)))
-                         
-

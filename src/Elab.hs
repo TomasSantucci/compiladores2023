@@ -21,34 +21,35 @@ import MonadFD4
 -- | 'elab' transforma variables ligadas en índices de de Bruijn
 -- en un término dado. 
 elab :: (MonadFD4 m) => STerm -> m Term
-elab = elab' [] 
+elab = elab' []
 
 elab' :: (MonadFD4 m) => [Name] -> STerm -> m Term
 elab' env (SV p v) =
   -- Tenemos que ver si la variable es Global o es un nombre local
   -- En env llevamos la lista de nombres locales.
-  if v `elem` env 
+  if v `elem` env
     then  return (V p (Free v))
     else  return (V p (Global v))
 
-elab' _ (SConst p c) = return $ (Const p c)
+elab' _ (SConst p c) = return (Const p c)
 
 elab' env (SLam p [(v,ty)] t) = do
-  t' <- (elab' (v:env) t)
-  ty' <- elabTy p ty
-  return $ Lam p v ty' (close v t')
-elab' env (SLam p ((v,ty):bs) t) = do 
-  t' <- (elab' (v:env) (SLam p bs t))
+  t' <- elab' (v:env) t
   ty' <- elabTy p ty
   return $ Lam p v ty' (close v t')
 
--- falta caso error sin argumentos?
+elab' env (SLam p ((v,ty):bs) t) = do
+  t' <- elab' (v:env) (SLam p bs t)
+  ty' <- elabTy p ty
+  return $ Lam p v ty' (close v t')
+
+-- falta caso error sin argumentos? TODO
 elab' env (SFix p (f,fty) [(x,xty)] t) = do
-  t' <- (elab' (x:f:env) t)
+  t' <- elab' (x:f:env) t
   fty' <- elabTy p fty
   xty' <- elabTy p xty
   return $ Fix p f fty' x xty' (close2 f x t')
-  
+
 elab' env (SFix p (f,fty) ((x,xty):bs) t) = do
   t' <- elab' (x:f:env) (SLam p bs t)
   fty' <- elabTy p fty
@@ -56,9 +57,9 @@ elab' env (SFix p (f,fty) ((x,xty):bs) t) = do
   return $ Fix p f fty' x xty' (close2 f x t')
 
 elab' env (SIfZ p c t e) = do
-  t1 <- (elab' env c)
-  t2 <- (elab' env t)
-  t3 <- (elab' env e)
+  t1 <- elab' env c
+  t2 <- elab' env t
+  t3 <- elab' env e
   return $ IfZ p t1 t2 t3
 -- Operadores binarios
 elab' env (SBinaryOp i o t u) = do
@@ -72,31 +73,30 @@ elab' env (SPrint i str t) = do
 
 elab' env (SPrintFun i str) = do
   let var = freshen env "x"
-  elab' env $ (SLam i [(var,SNatTy)] (SPrint i str (SV i var)))
+  elab' env (SLam i [(var,SNatTy)] (SPrint i str (SV i var)))
 
 -- Aplicaciones generales
 elab' env (SApp p h a) = do
-  t1 <- (elab' env h)
-  t2 <- (elab' env a)
+  t1 <- elab' env h
+  t2 <- elab' env a
   return $ App p t1 t2
 
 elab' env (SLet parens False p (v,vty) [] def body) = do
-  t1 <- (elab' env def)
-  t2 <- (elab' (v:env) body) 
+  t1 <- elab' env def
+  t2 <- elab' (v:env) body
   vty' <- elabTy p vty
   return $ Let p v vty' t1 (close v t2)
 
 elab' env (SLet parens False p (v,vty) (b:bs) def body) = do
-  def' <- (elab' env (SLam p (b:bs) def))
-  vty' <- (getFunType p (map snd (b:bs)) vty)
-  body' <- (elab' (v:env) body)
+  def' <- elab' env (SLam p (b:bs) def)
+  vty' <- getFunType p (map snd (b:bs)) vty
+  body' <- elab' (v:env) body
   return $ Let p v vty' def' (close v body') --CHEAQUEAR LA POSICION TODO
 
 elab' env (SLet parens True p (v,vty) [(x,xty)] def body) =do
-  vty' <- (getFunType p [xty] vty)
+  vty' <- getFunType p [xty] vty
   xty' <- elabTy p xty
   t' <- elab' env def
---  def' <- (elab' env (SFix p (v,vty') [(x,xty)] def))
   let def' = Fix p v vty' x xty' (close2 v x t')
   body' <- (elab' (v:env) body)
   return $ Let p v vty' def' (close v body')
@@ -105,7 +105,11 @@ elab' env (SLet parens True p (f,rty) ((x,xty):bs) def body) = do
   fty <- getFunSType (map snd bs) rty
   let def' = SLam p bs def
   elab' env (SLet parens True p (f,fty) [(x,xty)] def' body)
- 
+
+elab' env t =
+  failFD4 "Patrón no reconocido para elab."
+
+
 elabTy :: (MonadFD4 m) => Pos -> STy -> m Ty
 elabTy _ SNatTy = return $ NatTy Nothing
 
@@ -167,3 +171,5 @@ elabDecl (SDecl p f rty ((x,xty):bs) True t) = do
   let t' = (SLam p bs t)
   elabDecl (SDecl p f fty [(x,xty)] True t')
 
+elabDecl (SDecl p _ _ _ _ _) = do
+  failPosFD4 p "Patrón no reconocido por elabDecl."
