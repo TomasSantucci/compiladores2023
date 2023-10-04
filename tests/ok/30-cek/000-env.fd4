@@ -1,0 +1,4 @@
+let f:Nat->(Nat->Nat) = fun (x:Nat) -> fun (y:Nat) -> x+y
+
+let a:Nat->Nat = (f 5)
+let b:Nat = print "res = " (a 6)

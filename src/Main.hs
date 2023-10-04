@@ -36,6 +36,7 @@ import CEK ( evalCEK )
 import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
+import Bytecompile
 
 prompt :: String
 prompt = "FD4> "
@@ -46,9 +47,10 @@ prompt = "FD4> "
 parseMode :: Parser (Mode,Bool)
 parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
-      <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'k' <> help "Ejecutar interactivamente en la CEK")
-  -- <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
-  -- <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
+      <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'd' <> help "Ejecutar interactivamente en la CEK")
+      <|> flag' CEK (long "cek" <> short 'k' <> help "Ejecutar CEK")
+      <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
+      <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
   -- <|> flag' CC ( long "cc" <> short 'c' <> help "Compilar a código C")
@@ -77,6 +79,10 @@ main = execParser opts >>= go
               runOrFail (Conf opt InteractiveCEK) (runInputT defaultSettings (repl files))
     go (Interactive,opt,files) =
               runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
+    go (Bytecompile,opt,files) =
+              runOrFail (Conf opt Bytecompile) (mapM_ bytecompileFile files)
+    go (RunVM,opt,files) =
+              runOrFail (Conf opt RunVM) (mapM_ runVMFile files)
     go (m,opt, files) =
               runOrFail (Conf opt m) $ mapM_ compileFile files
 
@@ -127,6 +133,22 @@ compileFile f = do
     mapM_ handleDecl decls
     setInter i
 
+bytecompileFile ::  MonadFD4 m => FilePath -> m ()
+bytecompileFile f = do
+    printFD4 ("Abriendo "++f++"...")
+    decls <- loadFile f
+    mapM_ handleDecl decls
+    s <- get
+    bc <- bytecompileModule (reverse (glb s))
+    let f' = reverse (drop 3 (reverse f))
+    liftIO $ bcWrite bc (f' ++ "bc32")
+    printFD4 ("Compilado a bytecode correctamente en "++f'++"bc32")
+
+runVMFile ::  MonadFD4 m => FilePath -> m ()
+runVMFile f = do
+    bc <- liftIO $ bcRead f
+    runBC bc
+
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
                   Left e  -> throwError (ParseErr e)
@@ -139,36 +161,48 @@ evalDecl (Decl p x ty e) = do
 
 handleDecl ::  MonadFD4 m => SDecl -> m ()
 handleDecl dec = do
-  d' <- elabDecl dec
-  case d' of
+  dec' <- elabDecl dec
+  case dec' of
     Nothing -> return ()
-    Just dd@(Decl p x ty t) -> handleDecl' dd
-  where 
-    handleDecl' d = do
-      m <- getMode
-      case m of
-        InteractiveCEK -> do
-            (Decl p x ty tt) <- tcDecl d
-            te <- evalCEK tt
-            addDecl (Decl p x ty te)
-        Interactive -> do
-            (Decl p x ty tt) <- tcDecl d
-            te <- eval tt
-            addDecl (Decl p x ty te)
-        Typecheck -> do
-            f <- getLastFile
-            printFD4 ("Chequeando tipos de "++f)
-            td <- tcDecl d
-            addDecl td
-            -- opt <- getOpt
-            -- td' <- if opt then optimize td else td
-            ppterm <- ppDecl td  --td'
-            printFD4 ppterm
-        Eval -> do
-            td <- tcDecl d
-            -- td' <- if opt then optimizeDecl td else return td
-            ed <- evalDecl td
-            addDecl ed
+    Just d@(Decl p x ty t) -> handleDecl' d
+
+handleDecl' :: MonadFD4 m => Decl Term -> m ()
+handleDecl' d = do
+  m <- getMode
+  case m of
+    InteractiveCEK -> do
+        (Decl p x ty tt) <- tcDecl d
+        (te,env) <- evalCEK tt
+        addEnv x env
+        addDecl (Decl p x ty te)
+    Interactive -> do
+        (Decl p x ty tt) <- tcDecl d
+        te <- eval tt
+        addDecl (Decl p x ty te)
+    Typecheck -> do
+        f <- getLastFile
+        printFD4 ("Chequeando tipos de "++f)
+        td <- tcDecl d
+        addDecl td
+        -- opt <- getOpt
+        -- td' <- if opt then optimize td else td
+        ppterm <- ppDecl td  --td'
+        printFD4 ppterm
+    Eval -> do
+        td <- tcDecl d
+        -- td' <- if opt then optimizeDecl td else return td
+        ed <- evalDecl td
+        addDecl ed
+    CEK -> do
+        (Decl p x ty tt) <- tcDecl d
+        (te,env) <- evalCEK tt
+        addEnv x env
+        addDecl (Decl p x ty te)
+    Bytecompile -> do
+        tcd <- tcDecl d
+        addDecl tcd
+    _ ->
+        return ()
 
 data Command = Compile CompileForm
              | PPrint String
@@ -254,7 +288,8 @@ compilePhrase x = do
         m <- getMode
         handleTerm t (evalFun m)
   where evalFun Interactive = eval
-        evalFun InteractiveCEK = evalCEK
+        evalFun InteractiveCEK = \d -> do t <- evalCEK d
+                                          return $ fst t
         evalFun _ = eval
 
 handleTerm ::  MonadFD4 m => STerm -> (TTerm -> m TTerm)-> m ()

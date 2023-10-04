@@ -3,29 +3,9 @@ module CEK where
 import Lang
 import MonadFD4
 import Common
+import Data.Maybe (fromJust)
 
-data Val = 
-  NumVal Int |
-  ClosV Clos
- 
-data Clos =
-  ClosFun Env TTerm Name Ty |
-  ClosFix Env TTerm Name Ty Name Ty
-
-data Frame = 
-  KArg Env TTerm |
-  KFun Clos |
-  KIfz Env TTerm TTerm |
-  KOpL Env BinaryOp TTerm |
-  KOpR Int BinaryOp |
-  KPrint String |
-  KLet Env TTerm
-
-type Env = [Val]
-
-type Kont = [Frame]
-
-seek :: MonadFD4 m => TTerm -> Env -> Kont -> m Val
+seek :: MonadFD4 m => TTerm -> CEKEnv -> Kont -> m CEKVal
 
 seek (Print _ str t) env k =
   seek t env ((KPrint str) : k)
@@ -45,7 +25,8 @@ seek (V _ (Bound i)) env k =
 seek (V _ (Global n)) env k = do
   decl <- lookupDecl n
   case decl of 
-    Just t -> seek t env k
+    Just t -> do env' <- lookupEnv n
+                 seek t (env ++ fromJust env') k
     Nothing -> failFD4 ("Variable global" ++ n ++ "no declarada.")
 
 seek (V _ (Free n)) env k =
@@ -64,7 +45,7 @@ seek (Let _ _ _ def (Sc1 body)) env k =
   seek def env ((KLet env body) : k)
 
 
-destroy :: MonadFD4 m => Val -> Kont -> m Val
+destroy :: MonadFD4 m => CEKVal -> Kont -> m CEKVal
 
 destroy v [] = 
   return v
@@ -100,16 +81,16 @@ destroy v ((KLet env t):k) =
 destroy v k =
   failFD4 "Error de runtime."
 
-value2Term :: Val -> TTerm
+value2Term :: CEKVal -> (TTerm, CEKEnv)
 value2Term (NumVal n) =
-  Const (NoPos,NatTy Nothing) (CNat n)
+  (Const (NoPos,NatTy Nothing) (CNat n), [])
 
-value2Term (ClosV (ClosFun _ body x xty)) =
-  Lam (NoPos,(FunTy xty (getTy body) Nothing)) x xty (Sc1 body)
+value2Term (ClosV (ClosFun env body x xty)) =
+  (Lam (NoPos,(FunTy xty (getTy body) Nothing)) x xty (Sc1 body), env)
 
-value2Term (ClosV (ClosFix _ body f fty x xty)) =
-  Fix (NoPos,fty) f fty x xty (Sc2 body)
+value2Term (ClosV (ClosFix env body f fty x xty)) =
+  (Fix (NoPos,fty) f fty x xty (Sc2 body), env)
 
-evalCEK :: (MonadFD4 m) => TTerm -> m TTerm
+evalCEK :: (MonadFD4 m) => TTerm -> m (TTerm, CEKEnv)
 evalCEK t = do v <- seek t [] []
                return (value2Term v)

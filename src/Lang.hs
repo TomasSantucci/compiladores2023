@@ -110,6 +110,7 @@ data Tm info var =
 
 type Term = Tm Pos Var       -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición
 type TTerm = Tm (Pos,Ty) Var -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición y tipo
+type Module = [Decl TTerm]
 
 data Var =
     Bound !Int
@@ -129,6 +130,26 @@ instance (Show info, Show var) => Show (Scope info var) where
 instance (Show info, Show var) => Show (Scope2 info var) where
     show (Sc2 t) = "{{"++show t++"}}"
 
+data CEKVal = 
+  NumVal Int |
+  ClosV Clos
+ 
+data Clos =
+  ClosFun CEKEnv TTerm Name Ty |
+  ClosFix CEKEnv TTerm Name Ty Name Ty
+
+data Frame = 
+  KArg CEKEnv TTerm |
+  KFun Clos |
+  KIfz CEKEnv TTerm TTerm |
+  KOpL CEKEnv BinaryOp TTerm |
+  KOpR Int BinaryOp |
+  KPrint String |
+  KLet CEKEnv TTerm
+
+type CEKEnv = [CEKVal]
+
+type Kont = [Frame]
 
 -- | Semántica de operadores binarios
 semOp :: BinaryOp -> Int -> Int -> Int
