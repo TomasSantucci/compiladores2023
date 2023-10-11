@@ -24,4 +24,8 @@ test: build vm
 vm:
 	$(MAKE) -C vm
 
+clean:
+	@find tests/ok/ \( -name "*actual*" -o -name "*bc*" -o -name "*check*" \) -exec rm {} \;
+	@echo "Se eliminaron los archivos complementarios de test."
+
 .PHONY: vm
