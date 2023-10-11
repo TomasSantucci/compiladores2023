@@ -4,3 +4,4 @@
 *.actual_out*
 *.actual_opt_out
 *.bc32
+*.bc8

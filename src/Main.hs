@@ -141,8 +141,8 @@ bytecompileFile f = do
     s <- get
     bc <- bytecompileModule (reverse (glb s))
     let f' = reverse (drop 3 (reverse f))
-    liftIO $ bcWrite bc (f' ++ "bc32")
-    printFD4 ("Compilado a bytecode correctamente en "++f'++"bc32")
+    liftIO $ bcWrite bc (f' ++ "bc8")
+    printFD4 ("Compilado a bytecode correctamente en "++f'++"bc8")
 
 runVMFile ::  MonadFD4 m => FilePath -> m ()
 runVMFile f = do

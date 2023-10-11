@@ -19,29 +19,33 @@ import Lang
 import MonadFD4
 
 import qualified Data.ByteString.Lazy as BS
-import Data.Binary ( Word32, Binary(put, get), decode, encode )
-import Data.Binary.Put ( putWord32le )
-import Data.Binary.Get ( getWord32le, isEmpty )
+import Data.Binary ( Binary(put, get), decode, encode )
+import Data.Binary.Put ( putWord8 )
+import Data.Binary.Get ( isEmpty, getWord8 )
 
-import Data.Maybe (fromJust)
+import Data.Word
+import Data.Bits
+
+import Data.Text.Internal.Encoding.Utf8
+
 import Data.List (intercalate, elemIndex)
 import Data.Char
 
 type Opcode = Int
 type Bytecode = [Int]
 
-newtype Bytecode32 = BC { un32 :: [Word32] }
+newtype Bytecode8 = BC { un8 :: [Word8] }
 
 {- Esta instancia explica como codificar y decodificar Bytecode de 32 bits -}
-instance Binary Bytecode32 where
-  put (BC bs) = mapM_ putWord32le bs
+instance Binary Bytecode8 where
+  put (BC bs) = mapM_ putWord8 bs
   get = go
     where go =
            do
             empty <- isEmpty
             if empty
               then return $ BC []
-              else do x <- getWord32le
+              else do x <- getWord8
                       BC xs <- go
                       return $ BC (x:xs)
 
@@ -58,20 +62,35 @@ entero, por ejemplo:
  En lo posible, usar estos códigos exactos para poder ejectutar un
  mismo bytecode compilado en distintas implementaciones de la máquina.
 -}
+pattern NULL     :: Int
 pattern NULL     = 0
+pattern RETURN   :: Int
 pattern RETURN   = 1
+pattern CONST    :: Int
 pattern CONST    = 2
+pattern ACCESS   :: Int
 pattern ACCESS   = 3
+pattern FUNCTION :: Int
 pattern FUNCTION = 4
+pattern CALL     :: Int
 pattern CALL     = 5
+pattern ADD      :: Int
 pattern ADD      = 6
+pattern SUB      :: Int
 pattern SUB      = 7
+pattern FIX      :: Int
 pattern FIX      = 9
+pattern STOP     :: Int
 pattern STOP     = 10
+pattern SHIFT    :: Int
 pattern SHIFT    = 11
+pattern DROP     :: Int
 pattern DROP     = 12
+pattern PRINT    :: Int
 pattern PRINT    = 13
+pattern PRINTN   :: Int
 pattern PRINTN   = 14
+pattern JUMP     :: Int
 pattern JUMP     = 15
 
 --función util para debugging: muestra el Bytecode de forma más legible.
@@ -93,8 +112,16 @@ showOps (DROP:xs)        = "DROP" : showOps xs
 showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
                            in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
-showOps (ADD:xs)         = "ADD" : showOps xs
 showOps (x:xs)           = show x : showOps xs
+
+opArgs :: Int -> Int
+opArgs STOP = -1
+opArgs CONST = 1
+opArgs ACCESS = 1
+opArgs FUNCTION = 1
+opArgs JUMP = 1
+opArgs PRINT = -2
+opArgs _ = 0
 
 showBC :: Bytecode -> String
 showBC = intercalate "; " . showOps
@@ -205,7 +232,43 @@ module2term' ((Decl p x xty t):ds) decs = do
 
 -- | Toma un bytecode, lo codifica y lo escribe un archivo
 bcWrite :: Bytecode -> FilePath -> IO ()
-bcWrite bs filename = BS.writeFile filename (encode $ BC $ fromIntegral <$> bs)
+bcWrite bc filename = BS.writeFile filename (encode $ BC $ bcToWords8 bc)
+
+chrToUtf8 :: Char -> [Word8]
+chrToUtf8 c = case utf8Length c of
+              1 -> [fromIntegral (ord c)]
+              2 -> let (w1,w2) = ord2 c
+                   in [w1,w2]
+              3 -> let (w1,w2,w3) = ord3 c
+                   in [w1,w2,w3]
+              4 -> let (w1,w2,w3,w4) = ord4 c
+                   in [w1,w2,w3,w4]
+              _ -> []
+
+encodeStr :: Bytecode -> ([Word8],Bytecode)
+encodeStr [] = ([],[])
+encodeStr (b:bs) | b == NULL = ([fromIntegral b],bs)
+                 | otherwise = let (str, remstr) = encodeStr bs in
+                               ((chrToUtf8 (chr b)) ++ str, remstr)
+
+intToWords8 :: Int -> [Word8]
+intToWords8 n =
+  [ fromIntegral (n .&. 0xFF)
+  , fromIntegral ((n `shiftR` 8) .&. 0xFF)
+  , fromIntegral ((n `shiftR` 16) .&. 0xFF)
+  , fromIntegral ((n `shiftR` 24) .&. 0xFF)
+  ]
+
+-- | Toma un bytecode, y lo codifica a lista de bytes (Word8)
+bcToWords8 :: Bytecode -> [Word8]
+bcToWords8 [] = []
+bcToWords8 (b:bs) = case opArgs b of
+                  -2 -> let (ws, rm) = encodeStr bs
+                        in (fromIntegral b) : (ws ++ (bcToWords8 rm))
+                  -1 -> [fromIntegral b]
+                  0 -> (fromIntegral b) : (bcToWords8 bs)
+                  1 -> (fromIntegral b) : (intToWords8 (head bs)) ++ (bcToWords8 (tail bs))
+                  _ -> []
 
 ---------------------------
 -- * Ejecución de bytecode
@@ -213,7 +276,44 @@ bcWrite bs filename = BS.writeFile filename (encode $ BC $ fromIntegral <$> bs)
 
 -- | Lee de un archivo y lo decodifica a bytecode
 bcRead :: FilePath -> IO Bytecode
-bcRead filename = (map fromIntegral <$> un32) . decode <$> BS.readFile filename
+bcRead filename = (words8ToBc . un8 . decode) <$> (BS.readFile filename)
+
+words8ToChr :: [Word8] -> Int -> Char
+words8ToChr [b] 1 = chr (fromIntegral b)
+words8ToChr [b1,b2] 2 = chr2 b1 b2
+words8ToChr [b1,b2,b3] 3 = chr3 b1 b2 b3
+words8ToChr [b1,b2,b3,b4] 4 = chr4 b1 b2 b3 b4
+words8ToChr _ _ = error "Se esperaban entre 1 y 4 bytes para formar un char."
+
+decodeStr :: [Word8] -> (Bytecode,[Word8])
+decodeStr [] = ([],[])
+decodeStr ws | head ws == 0 = ([0], tail ws)
+             | otherwise =
+                let len = utf8LengthByLeader (head ws)
+                    (remBc,remWords) = decodeStr (drop len ws)
+                    fstBc = ord $ words8ToChr (take len ws) len
+                in (fstBc : remBc, remWords)
+
+read32BitInt :: [Word8] -> Int
+read32BitInt [b1, b2, b3, b4] =
+    let byte1 = fromIntegral b1
+        byte2 = fromIntegral b2
+        byte3 = fromIntegral b3
+        byte4 = fromIntegral b4
+    in byte4 `shiftL` 24 .|. byte3 `shiftL` 16 .|. byte2 `shiftL` 8 .|. byte1
+read32BitInt _ = error "Se esperaban 4 bytes para formar un entero."
+
+words8ToBc :: [Word8] -> Bytecode
+words8ToBc [] = []
+words8ToBc (b:bs) =
+  let i = fromIntegral b in
+  case opArgs i of
+    -2 -> let (strBc, rm) = decodeStr bs
+          in i : strBc ++ (words8ToBc rm)
+    -1 -> [i]
+    0 -> i : (words8ToBc bs)
+    1 -> i : (read32BitInt (take 4 bs)) : (words8ToBc (drop 4 bs))
+    _ -> []
 
 type Env = [Val]
 
@@ -232,7 +332,7 @@ runBC' (ADD:c) e ((I n):(I m):s) =
   runBC' c e ((I (n+m)):s)
 
 runBC' (SUB:c) e ((I n):(I m):s) =
-  runBC' c e ((I (max (n-m) 0)):s)
+  runBC' c e ((I (max (m-n) 0)):s)
 
 runBC' (ACCESS:i:c) e s =
   runBC' c e ((e!!i):s)

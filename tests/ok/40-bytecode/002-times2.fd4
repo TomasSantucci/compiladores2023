@@ -1,0 +1,4 @@
+let rec times2 (n:Nat):Nat = ifz n then 0 else
+                                 2 + (times2 (n-1))
+
+let x:Nat = print "res = " (times2 3)
