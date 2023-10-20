@@ -22,7 +22,7 @@ EXTRAFLAGS	:=
 CHECK	+= $(patsubst %,%.check_eval,$(TESTS))
 CHECK	+= $(patsubst %,%.check_cek,$(TESTS))
 CHECK	+= $(patsubst %,%.check_bc8_h,$(TESTS))
-# CHECK	+= $(patsubst %,%.check_bc8,$(TESTS))
+CHECK	+= $(patsubst %,%.check_bc8,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_eval_opt,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_opt,$(TESTS))
 

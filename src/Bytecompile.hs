@@ -78,6 +78,8 @@ pattern ADD      :: Int
 pattern ADD      = 6
 pattern SUB      :: Int
 pattern SUB      = 7
+pattern CJUMP     :: Int
+pattern CJUMP     = 8
 pattern FIX      :: Int
 pattern FIX      = 9
 pattern STOP     :: Int
@@ -92,6 +94,8 @@ pattern PRINTN   :: Int
 pattern PRINTN   = 14
 pattern JUMP     :: Int
 pattern JUMP     = 15
+pattern TAILCALL    :: Int
+pattern TAILCALL     = 16
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -107,6 +111,7 @@ showOps (SUB:xs)         = "SUB" : showOps xs
 showOps (FIX:xs)         = "FIX" : showOps xs
 showOps (STOP:xs)        = "STOP" : showOps xs
 showOps (JUMP:i:xs)      = ("JUMP off=" ++ show i) : showOps xs
+showOps (CJUMP:i:xs)      = ("CJUMP off=" ++ show i) : showOps xs
 showOps (SHIFT:xs)       = "SHIFT" : showOps xs
 showOps (DROP:xs)        = "DROP" : showOps xs
 showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
@@ -120,11 +125,31 @@ opArgs CONST = 1
 opArgs ACCESS = 1
 opArgs FUNCTION = 1
 opArgs JUMP = 1
+opArgs CJUMP = 1
 opArgs PRINT = -2
 opArgs _ = 0
 
 showBC :: Bytecode -> String
 showBC = intercalate "; " . showOps
+
+bct :: MonadFD4 m => TTerm -> m Bytecode
+bct (App _ t1 t2) = do
+  ct1 <- bcc t1
+  ct2 <- bcc t2
+  return $ ct1 ++ ct2 ++ [TAILCALL]
+
+bct (IfZ _ c t e) = do
+  cc <- bcc c
+  ct <- bct t
+  ce <- bct e
+  return $ cc ++ [CJUMP, (length ct) + 2] ++ ct ++ [JUMP,length ce] ++ ce
+
+bct (Let _ _ _ def (Sc1 body)) = do
+  cdef <- bcc def
+  cbody <- bct body
+  return $ cdef ++ [SHIFT] ++ cbody
+
+bct t = bcc t
 
 bcc :: MonadFD4 m => TTerm -> m Bytecode
 bcc (V _ (Bound i)) = return [ACCESS,i]
@@ -132,7 +157,7 @@ bcc (V _ (Bound i)) = return [ACCESS,i]
 bcc (Const _ (CNat i)) = return [CONST,i]
 
 bcc (Lam _ _ _ (Sc1 t)) = do
-  ct <- bcc t
+  ct <- bct t
   return $ [FUNCTION, (length ct) + 1] ++ ct ++ [RETURN]
 
 bcc (App _ t1 t2) = do
@@ -142,14 +167,14 @@ bcc (App _ t1 t2) = do
 
 bcc (Print _ str t) = do
   ct <- bcc t
-  return $ ct ++ [PRINTN,PRINT] ++ (string2bc str) ++ [NULL]
+  return $ ct ++ [PRINT] ++ (string2bc str) ++ [NULL,PRINTN]
 
 bcc (BinaryOp _ op t1 t2) = do
   ct1 <- bcc t1
   ct2 <- bcc t2
   return $ ct1 ++ ct2 ++ (op2bc op)
 
-bcc (Fix _ _ _ _ _ (Sc2 t)) = do--Preguntar !!!
+bcc (Fix _ _ _ _ _ (Sc2 t)) = do
   ct <- bcc t
   return  $ [FUNCTION, (length ct) + 1] ++ ct ++ [RETURN,FIX]
 
@@ -157,7 +182,7 @@ bcc (IfZ _ c t e) = do -- Jump solo salta si se encuentra un 0 en el stack top.
   cc <- bcc c
   ct <- bcc t
   ce <- bcc e
-  return $ cc ++ [JUMP, (length ce) + 4] ++ ce ++ [CONST,0,JUMP,length ct] ++ ct
+  return $ cc ++ [CJUMP, (length ct) + 2] ++ ct ++ [JUMP,length ce] ++ ce
 
 bcc (Let _ _ _ def (Sc1 body)) = do
   cdef <- bcc def
@@ -178,10 +203,18 @@ string2bc = map ord
 bc2string :: Bytecode -> String
 bc2string = map chr
 
+bcc2 :: MonadFD4 m => TTerm -> m Bytecode
+bcc2 (Let _ _ _ def (Sc1 body)) = do
+  cdef <- bcc def
+  cbody <- bcc2 body
+  return $ cdef ++ [SHIFT] ++ cbody
+
+bcc2 t = bcc t
+
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
 bytecompileModule m = do 
   t <- module2term m
-  bc <- bcc t
+  bc <- bcc2 t
   return $ bc ++ [STOP]
 
 glb2bound :: MonadFD4 m => TTerm -> [Name] -> Int -> m TTerm
@@ -340,6 +373,9 @@ runBC' (ACCESS:i:c) e s =
 runBC' (CALL:c) e (v:(Fun e' c'):s) =
   runBC' c' (v:e') ((RA e c):s)
 
+runBC' (TAILCALL:c) e (v:(Fun e' c'):s) =
+  runBC' c' (v:e') s
+
 runBC' (FUNCTION:l:c) e s =
   runBC' c' e ((Fun e cf):s)
   where c' = drop l c
@@ -354,13 +390,14 @@ runBC' (SHIFT:c) e (v:s) =
 runBC' (DROP:c) (v:e) (s) =
   runBC' c e s
 
-runBC' (PRINTN:c) e ((I n):s) =
+runBC' (PRINTN:c) e ((I n):s) = do
+  printFD4 (show n)
   runBC' c e ((I n):s)
 
-runBC' (PRINT:c) e ((I n):s) = do
+runBC' (PRINT:c) e s = do
   let (msg,_:rest) = span (NULL /=) c
-  printFD4 $ (bc2string msg) ++ (show n)
-  runBC' rest e ((I n):s)
+  printFD4' $ bc2string msg
+  runBC' rest e s
 
 -- Esta regla se ejecuta inmediatamente 
 -- despues de la regla de function por ende e y e' son el mismo 
@@ -368,9 +405,12 @@ runBC' (FIX:c) e ((Fun e' c'):s) = do
   let efix = (Fun efix c'):e'
   runBC' c e ((Fun efix c'):s)
 
-runBC' (JUMP:n:c) e ((I z) : s) = do
+runBC' (CJUMP:n:c) e ((I z) : s) =
   if z == 0 
-    then runBC' (drop n c) e s
-    else runBC' c e s
+    then runBC' c e s
+    else runBC' (drop n c) e s
+
+runBC' (JUMP:n:c) e s =
+     runBC' (drop n c) e s
 
 runBC' c _ s = failFD4 "Error en ejecución de la Macchina."
