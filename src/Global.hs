@@ -19,7 +19,11 @@ data GlEnv = GlEnv {
   cantDecl :: Int,      -- ^ Cantidad de declaraciones desde la última carga
   glb :: [Decl TTerm],  -- ^ Entorno con declaraciones globales
   synonyms :: [(Name,Ty)],
-  declEnvs :: [(Name,CEKEnv)]
+  declEnvs :: [(Name,CEKEnv)],
+  stepsCEK :: Int,
+  opsBC :: Int,
+  maxStackSize :: Int,
+  clos :: Int
 }
 
 -- ^ Entorno de tipado de declaraciones globales
@@ -43,9 +47,10 @@ data Mode =
   -- | Build
 data Conf = Conf {
     opt :: Bool,          --  ^ True, si estan habilitadas las optimizaciones.
-    modo :: Mode
+    modo :: Mode,
+    prof :: Bool
 }
 
 -- | Valor del estado inicial
 initialEnv :: GlEnv
-initialEnv = GlEnv False "" 0 [] [] []
+initialEnv = GlEnv False "" 0 [] [] [] 0 0 0 0

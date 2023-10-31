@@ -105,7 +105,7 @@ data Tm info var =
   | BinaryOp info BinaryOp (Tm info var) (Tm info var)
   | Fix info Name Ty Name Ty (Scope2 info var)
   | IfZ info (Tm info var) (Tm info var) (Tm info var)
-  | Let info Name Ty (Tm info var)  (Scope info var)
+  | Let info Name Ty (Tm info var) (Scope info var)
   deriving (Show, Functor)
 
 type Term = Tm Pos Var       -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición
@@ -200,3 +200,16 @@ freeVars tm = nubSort $ go tm [] where
   go (IfZ _ c t e             ) xs = go c $ go t $ go e xs
   go (Const _ _               ) xs = xs
   go (Let _ _ _ e (Sc1 t)     ) xs = go e (go t xs)
+
+
+globalVarSearch :: Name -> TTerm -> Bool
+globalVarSearch  n (V _ (Global str)) = str == n
+globalVarSearch  _ (V _ _) = False
+globalVarSearch  _ (Const _ _) = False
+globalVarSearch  n (Lam _ _ ty (Sc1 t)) = globalVarSearch n t
+globalVarSearch  n (App _ t1 t2) =globalVarSearch n t1 || globalVarSearch n t2
+globalVarSearch  n (Print _ _ t) = globalVarSearch n t
+globalVarSearch  n (BinaryOp _ _ t1 t2) = globalVarSearch n t1 || globalVarSearch n t2
+globalVarSearch  n (Fix _ _ _ _ _ (Sc2 t)) = globalVarSearch n t
+globalVarSearch  n (IfZ _ t1 t2 t3) = globalVarSearch n t1 || globalVarSearch n t2 || globalVarSearch n t3
+globalVarSearch  n (Let _ _ _ t1 (Sc1 t2)) =globalVarSearch n t1 || globalVarSearch n t2 

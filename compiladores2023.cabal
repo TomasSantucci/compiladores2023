@@ -39,6 +39,7 @@ executable compiladores2023
         TypeChecker
         CEK
         Bytecompile
+        Optimization
 
     ghc-options: 
         -threaded 

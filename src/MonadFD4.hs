@@ -3,6 +3,8 @@
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use <$>" #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 
 {-|
 Module      : MonadFD4
@@ -18,7 +20,9 @@ y la mónada 'FD4' que provee una instancia de esta clase.
 
 module MonadFD4 (
   FD4,
+  FD4Prof,
   runFD4,
+  runFD4Prof,
   lookupDecl,
   lookupTy,
   printFD4,
@@ -31,13 +35,18 @@ module MonadFD4 (
   addSynonym,
   getMode,
   getOpt,
+  getProf,
   eraseLastFileDecls,
   failPosFD4,
   failFD4,
   addDecl,
   catchErrors,
-  addEnv,
   lookupEnv,
+  updateGlbDecls,
+  stepCEK,
+  opBC,
+  stackSize,
+  countClos,
   MonadFD4,
   module Control.Monad.Except,
   module Control.Monad.State)
@@ -70,12 +79,19 @@ y otras operaciones derivadas de ellas, como por ejemplo
    - @gets :: (GlEnv -> a) -> m a@  
 -}
 class (MonadIO m, MonadState GlEnv m, MonadError Error m, MonadReader Conf m) => MonadFD4 m where
+      stepCEK :: m ()
+      opBC :: m ()
+      stackSize :: [a] -> m ()
+      countClos :: m ()
 
 getOpt :: MonadFD4 m => m Bool
 getOpt = asks opt
 
 getMode :: MonadFD4 m => m Mode
 getMode = asks modo
+
+getProf :: MonadFD4 m => m Bool
+getProf = asks prof
 
 setInter :: MonadFD4 m => Bool -> m ()
 setInter b = modify (\s-> s {inter = b})
@@ -102,10 +118,7 @@ getLastFile :: MonadFD4 m => m FilePath
 getLastFile = gets lfile
 
 addDecl :: MonadFD4 m => Decl TTerm -> m ()
-addDecl d = modify (\s -> s { glb = d : glb s, cantDecl = cantDecl s + 1 })
-
-addEnv :: MonadFD4 m => Name -> CEKEnv -> m ()
-addEnv n env = modify (\s -> s { declEnvs = ((n,env):(declEnvs s)) })
+addDecl d = modify (\s -> s { glb = glb s ++ [d], cantDecl = cantDecl s + 1 })
 
 eraseLastFileDecls :: MonadFD4 m => m ()
 eraseLastFileDecls = do
@@ -139,10 +152,13 @@ failPosFD4 p s = throwError (ErrPos p s)
 failFD4 :: MonadFD4 m => String -> m a
 failFD4 = failPosFD4 NoPos
 
-catchErrors  :: MonadFD4 m => m a -> m (Maybe a)
+catchErrors :: MonadFD4 m => m a -> m (Maybe a)
 catchErrors c = catchError (Just <$> c)
                            (\e -> liftIO $ hPrint stderr e
                               >> return Nothing)
+
+updateGlbDecls :: MonadFD4 m => [Decl TTerm] -> m ()
+updateGlbDecls ds = modify (\s -> s {glb = ds, cantDecl = length ds})
 
 ----
 -- Importante, no eta-expandir porque GHC no hace una
@@ -154,8 +170,25 @@ catchErrors c = catchError (Just <$> c)
 -- El transformador de mónadas @StateT GlEnv@ agrega la mónada @ExcepT Error IO@ la posibilidad de manejar un estado de tipo 'Global.GlEnv'.
 type FD4 = ReaderT Conf (StateT GlEnv (ExceptT Error IO))
 
+newtype FD4Prof a = FD4Prof { runFD4Prof' :: FD4 a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadState GlEnv, MonadError Error, MonadReader Conf)
+
 -- | Esta es una instancia vacía, ya que 'MonadFD4' no tiene funciones miembro.
-instance MonadFD4 FD4
+instance MonadFD4 FD4 where
+      stepCEK = return ()
+      opBC = return ()
+      stackSize _ = return ()
+      countClos = return ()
+
+instance MonadFD4 FD4Prof where
+      stepCEK = modify (\s -> s { stepsCEK = stepsCEK s + 1 })
+      opBC = modify (\s -> s { opsBC = opsBC s + 1 })
+      stackSize st =
+            modify (\s -> s { maxStackSize = max (maxStackSize s) (length st) })
+      countClos = modify (\s -> s { clos = clos s + 1 })
+
+runFD4Prof :: FD4Prof a -> Conf -> IO (Either Error a)
+runFD4Prof c = runFD4 (runFD4Prof' c)
 
 -- 'runFD4\'' corre una computación de la mónad 'FD4' en el estado inicial 'Global.initialEnv' 
 runFD4' :: FD4 a -> Conf -> IO (Either Error (a, GlEnv))

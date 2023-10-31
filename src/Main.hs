@@ -37,6 +37,7 @@ import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
 import Bytecompile
+import Optimization
 
 prompt :: String
 prompt = "FD4> "
@@ -44,8 +45,8 @@ prompt = "FD4> "
 
 
 -- | Parser de banderas
-parseMode :: Parser (Mode,Bool)
-parseMode = (,) <$>
+parseMode :: Parser (Mode,Bool,Bool)
+parseMode = (,,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
       <|> flag' InteractiveCEK (long "interactiveCEK" <> short 'd' <> help "Ejecutar interactivamente en la CEK")
       <|> flag' CEK (long "cek" <> short 'k' <> help "Ejecutar CEK")
@@ -58,13 +59,12 @@ parseMode = (,) <$>
   -- <|> flag' Assembler ( long "assembler" <> short 'a' <> help "Imprimir Assembler resultante")
   -- <|> flag' Build ( long "build" <> short 'b' <> help "Compilar")
       )
-   <*> pure False
-   -- reemplazar por la siguiente línea para habilitar opción
-   -- <*> flag False True (long "optimize" <> short 'o' <> help "Optimizar código")
+   <*> flag False True (long "optimize" <> short 'o' <> help "Optimizar código")
+   <*> flag False True (long "profile" <> short 'p' <> help "Optimizar código")
 
 -- | Parser de opciones general, consiste de un modo y una lista de archivos a procesar
-parseArgs :: Parser (Mode,Bool, [FilePath])
-parseArgs = (\(a,b) c -> (a,b,c)) <$> parseMode <*> many (argument str (metavar "FILES..."))
+parseArgs :: Parser (Mode,Bool,Bool, [FilePath])
+parseArgs = (\(a,b,c) d -> (a,b,c,d)) <$> parseMode <*> many (argument str (metavar "FILES..."))
 
 main :: IO ()
 main = execParser opts >>= go
@@ -74,21 +74,38 @@ main = execParser opts >>= go
      <> progDesc "Compilador de FD4"
      <> header "Compilador de FD4 de la materia Compiladores 2022" )
 
-    go :: (Mode,Bool,[FilePath]) -> IO ()
-    go (InteractiveCEK,opt,files) =
-              runOrFail (Conf opt InteractiveCEK) (runInputT defaultSettings (repl files))
-    go (Interactive,opt,files) =
-              runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
-    go (Bytecompile,opt,files) =
-              runOrFail (Conf opt Bytecompile) (mapM_ bytecompileFile files)
-    go (RunVM,opt,files) =
-              runOrFail (Conf opt RunVM) (mapM_ runVMFile files)
-    go (m,opt, files) =
-              runOrFail (Conf opt m) $ mapM_ compileFile files
+    go :: (Mode,Bool,Bool,[FilePath]) -> IO ()
+    go (mode, opt, prof, files) = if prof then runProfMode mode opt files
+                                  else runDefaultMode mode opt files
+
+    runProfMode :: Mode -> Bool -> [FilePath] -> IO ()
+    runProfMode Bytecompile opt files = runOrFailProf (Conf opt Bytecompile True) (mapM_ bytecompileFile files)
+    runProfMode RunVM opt files = runOrFailProf (Conf opt RunVM True) (mapM_ runVMFile files)
+    runProfMode CEK opt files = runOrFailProf (Conf opt CEK True) $ mapM_ compileCEK files
+    runProfMode Typecheck opt files = runOrFailProf (Conf opt Typecheck True) $ mapM_ compileTypeCheck files
+    runProfMode m opt files = runOrFailProf (Conf opt m True) $ mapM_ compileFile files
+
+    runDefaultMode :: Mode -> Bool -> [FilePath] -> IO ()
+    runDefaultMode InteractiveCEK opt files = runOrFail (Conf opt InteractiveCEK False) (runInputT defaultSettings (repl files))
+    runDefaultMode Interactive opt files = runOrFail (Conf opt Interactive False) (runInputT defaultSettings (repl files))
+    runDefaultMode Bytecompile opt files = runOrFail (Conf opt Bytecompile False) (mapM_ bytecompileFile files)
+    runDefaultMode RunVM opt files = runOrFail (Conf opt RunVM False) (mapM_ runVMFile files)
+    runDefaultMode CEK opt files = runOrFail (Conf opt CEK False) $ mapM_ compileCEK files
+    runDefaultMode Typecheck opt files = runOrFail (Conf opt Typecheck False) $ mapM_ compileTypeCheck files
+    runDefaultMode m opt files = runOrFail (Conf opt m False) $ mapM_ compileFile files
 
 runOrFail :: Conf -> FD4 a -> IO a
 runOrFail c m = do
   r <- runFD4 m c
+  case r of
+    Left err -> do
+      liftIO $ hPrint stderr err
+      exitWith (ExitFailure 1)
+    Right v -> return v
+
+runOrFailProf :: Conf -> FD4Prof a -> IO a
+runOrFailProf c m = do
+  r <- runFD4Prof m c
   case r of
     Left err -> do
       liftIO $ hPrint stderr err
@@ -116,13 +133,40 @@ repl args = do
 
 loadFile ::  MonadFD4 m => FilePath -> m [SDecl]
 loadFile f = do
-    let filename = reverse(dropWhile isSpace (reverse f))
+    let filename = reverse (dropWhile isSpace (reverse f))
     x <- liftIO $ catch (readFile filename)
                (\e -> do let err = show (e :: IOException)
                          hPutStrLn stderr ("No se pudo abrir el archivo " ++ filename ++ ": " ++ err)
                          return "")
     setLastFile filename
     parseIO filename program x
+
+compileCEK :: MonadFD4 m => FilePath -> m ()
+compileCEK f = do
+    decls <- loadFile f
+    mapM_ handleDecl decls
+    s1 <- get
+    opt <- getOpt
+    when opt $ optimization 10 (glb s1)
+    s2 <- get
+    mapM_ (evalCEK . getBody) (glb s2)
+    prof <- getProf
+    s3 <- get
+    when prof $ printFD4 $ "Maquina CEK ejectuto en " ++ (show (stepsCEK s3)) ++ " pasos"
+  where
+    getBody (Decl _ _ _ body) = body
+
+compileTypeCheck :: MonadFD4 m => FilePath -> m ()
+compileTypeCheck f = do
+    printFD4 ("Chequeando tipos de "++f)
+    decls <- loadFile f
+    mapM_ handleDecl decls
+    s1 <- get
+    opt <- getOpt
+    when opt $ optimization 10 (glb s1)
+    s2 <- get
+    mapM_ printDecls (glb s2)
+  where printDecls d = ppDecl d >>= printFD4
 
 compileFile ::  MonadFD4 m => FilePath -> m ()
 compileFile f = do
@@ -139,7 +183,9 @@ bytecompileFile f = do
     decls <- loadFile f
     mapM_ handleDecl decls
     s <- get
-    bc <- bytecompileModule (reverse (glb s))
+    opt <- getOpt
+    when opt $ optimization 10 (glb s)
+    bc <- bytecompileModule (glb s)
     let f' = reverse (drop 3 (reverse f))
     liftIO $ bcWrite bc (f' ++ "bc8")
     printFD4 ("Compilado a bytecode correctamente en "++f'++"bc8")
@@ -172,8 +218,7 @@ handleDecl' d = do
   case m of
     InteractiveCEK -> do
         (Decl p x ty tt) <- tcDecl d
-        (te,env) <- evalCEK tt
-        addEnv x env
+        te <- evalCEK tt
         addDecl (Decl p x ty te)
     Interactive -> do
         (Decl p x ty tt) <- tcDecl d
@@ -181,13 +226,8 @@ handleDecl' d = do
         addDecl (Decl p x ty te)
     Typecheck -> do
         f <- getLastFile
-        printFD4 ("Chequeando tipos de "++f)
         td <- tcDecl d
         addDecl td
-        -- opt <- getOpt
-        -- td' <- if opt then optimize td else td
-        ppterm <- ppDecl td  --td'
-        printFD4 ppterm
     Eval -> do
         td <- tcDecl d
         -- td' <- if opt then optimizeDecl td else return td
@@ -195,9 +235,7 @@ handleDecl' d = do
         addDecl ed
     CEK -> do
         (Decl p x ty tt) <- tcDecl d
-        (te,env) <- evalCEK tt
-        addEnv x env
-        addDecl (Decl p x ty te)
+        addDecl (Decl p x ty tt)
     Bytecompile -> do
         tcd <- tcDecl d
         addDecl tcd
@@ -288,8 +326,7 @@ compilePhrase x = do
         m <- getMode
         handleTerm t (evalFun m)
   where evalFun Interactive = eval
-        evalFun InteractiveCEK = \d -> do t <- evalCEK d
-                                          return $ fst t
+        evalFun InteractiveCEK = evalCEK
         evalFun _ = eval
 
 handleTerm ::  MonadFD4 m => STerm -> (TTerm -> m TTerm)-> m ()
