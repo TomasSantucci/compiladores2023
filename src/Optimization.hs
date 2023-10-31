@@ -64,12 +64,12 @@ applyRec (Lam i n ty (Sc1 t)) f= do
     return (Lam i n ty (Sc1 t'))
 
 applyRec (App i t1 t2) f = do
-    t1' <-f t1
+    t1' <- f t1
     t2' <- f t2
     return (App i t1' t2')
 
 applyRec (Print i s t) f= do
-    t' <-f t
+    t' <- f t
     return (Print i s t')
 
 applyRec (Fix i n nty m mty (Sc2 t)) f= do
@@ -99,16 +99,8 @@ hasPrint (IfZ _ c t e) = hasPrint c || hasPrint t || hasPrint e
 hasPrint (Let _ _ _ def (Sc1 body)) = hasPrint def || hasPrint body
 hasPrint _ = False
 
-canDiverge :: TTerm -> Bool
-canDiverge (App _ _ _) = True
-canDiverge (Print _ _ t) = canDiverge t
-canDiverge (BinaryOp _ _ t1 t2) = canDiverge t1 || canDiverge t2
-canDiverge (IfZ _ c t e) = canDiverge c || canDiverge t || canDiverge e
-canDiverge (Let _ _ _ def (Sc1 body)) = canDiverge def || canDiverge body
-canDiverge _ = False
-
 hasSideEffects :: TTerm -> Bool
-hasSideEffects t = canDiverge t || hasPrint t
+hasSideEffects t = hasPrint t
 
 deadCodeElim :: MonadFD4 m => [Decl TTerm] -> m [Decl TTerm]
 deadCodeElim [] = return []

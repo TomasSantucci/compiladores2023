@@ -23,6 +23,7 @@ data GlEnv = GlEnv {
   stepsCEK :: Int,
   opsBC :: Int,
   maxStackSize :: Int,
+  currStackSize :: Int,
   clos :: Int
 }
 
@@ -53,4 +54,4 @@ data Conf = Conf {
 
 -- | Valor del estado inicial
 initialEnv :: GlEnv
-initialEnv = GlEnv False "" 0 [] [] [] 0 0 0 0
+initialEnv = GlEnv False "" 0 [] [] [] 0 0 0 0 0

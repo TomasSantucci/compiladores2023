@@ -15,7 +15,7 @@ EXE	:= $(shell cabal exec whereis compiladores2023 | awk '{print $$2};')
 VM	:= ./vm/macc
 
 EXTRAFLAGS	:=
-EXTRAFLAGS	+= --optimize
+#EXTRAFLAGS	+= --optimize
 
 # Las reglas a chequear. Se puede deshabilitar toda una familia de tests
 # comentando una de estas líneas.

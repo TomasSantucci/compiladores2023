@@ -3,7 +3,6 @@ module CEK where
 import Lang
 import MonadFD4
 import Common
-import Data.Maybe (fromJust)
 import Subst
 
 seek :: MonadFD4 m => TTerm -> CEKEnv -> Kont -> m CEKVal
@@ -31,9 +30,8 @@ seek (V _ (Bound i)) env k = do
 seek (V _ (Global n)) env k = do
   stepCEK
   decl <- lookupDecl n
-  case decl of 
-    Just t -> do env' <- lookupEnv n
-                 seek t (env ++ fromJust env') k
+  case decl of
+    Just t -> seek t [] k
     Nothing -> failFD4 ("Variable global" ++ n ++ "no declarada.")
 
 seek (V _ (Free n)) env k =

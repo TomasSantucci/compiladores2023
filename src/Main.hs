@@ -149,11 +149,13 @@ compileCEK f = do
     opt <- getOpt
     when opt $ optimization 10 (glb s1)
     s2 <- get
-    mapM_ (evalCEK . getBody) (glb s2)
+    mapM_ evalAndUpdate (glb s2)
     prof <- getProf
     s3 <- get
     when prof $ printFD4 $ "Maquina CEK ejectuto en " ++ (show (stepsCEK s3)) ++ " pasos"
   where
+    evalAndUpdate (Decl _ name _ body) = do t' <- evalCEK body
+                                            updateDecl name t'
     getBody (Decl _ _ _ body) = body
 
 compileTypeCheck :: MonadFD4 m => FilePath -> m ()
@@ -185,7 +187,8 @@ bytecompileFile f = do
     s <- get
     opt <- getOpt
     when opt $ optimization 10 (glb s)
-    bc <- bytecompileModule (glb s)
+    s1 <- get
+    bc <- bytecompileModule (glb s1)
     let f' = reverse (drop 3 (reverse f))
     liftIO $ bcWrite bc (f' ++ "bc8")
     printFD4 ("Compilado a bytecode correctamente en "++f'++"bc8")
@@ -194,6 +197,12 @@ runVMFile ::  MonadFD4 m => FilePath -> m ()
 runVMFile f = do
     bc <- liftIO $ bcRead f
     runBC bc
+    prof <- getProf
+    s <- get
+    when prof $ printBCStats s
+  where printBCStats s = do printFD4 $ "Operaciones ejecutadas: " ++ (show (opsBC s))
+                            printFD4 $ "Tamano maximo del stack: " ++ (show (maxStackSize s))
+                            printFD4 $ "Cantidad de clausuras creadas: " ++ (show (clos s))
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of

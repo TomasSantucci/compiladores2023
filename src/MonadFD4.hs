@@ -43,9 +43,10 @@ module MonadFD4 (
   catchErrors,
   lookupEnv,
   updateGlbDecls,
+  updateDecl,
   stepCEK,
   opBC,
-  stackSize,
+  changeStack,
   countClos,
   MonadFD4,
   module Control.Monad.Except,
@@ -81,7 +82,7 @@ y otras operaciones derivadas de ellas, como por ejemplo
 class (MonadIO m, MonadState GlEnv m, MonadError Error m, MonadReader Conf m) => MonadFD4 m where
       stepCEK :: m ()
       opBC :: m ()
-      stackSize :: [a] -> m ()
+      changeStack :: (Int -> Int) -> m ()
       countClos :: m ()
 
 getOpt :: MonadFD4 m => m Bool
@@ -160,6 +161,11 @@ catchErrors c = catchError (Just <$> c)
 updateGlbDecls :: MonadFD4 m => [Decl TTerm] -> m ()
 updateGlbDecls ds = modify (\s -> s {glb = ds, cantDecl = length ds})
 
+updateDecl name t = modify (\s -> s {glb = replace (glb s) name t })
+  where replace [] name t = []
+        replace (d@(Decl i n ty _):ds) name t | name == n = ((Decl i n ty t):ds)
+        replace (d@(Decl i n ty _):ds) name t | otherwise = d: replace ds name t
+
 ----
 -- Importante, no eta-expandir porque GHC no hace una
 -- eta-contracción de sinónimos de tipos
@@ -177,14 +183,15 @@ newtype FD4Prof a = FD4Prof { runFD4Prof' :: FD4 a }
 instance MonadFD4 FD4 where
       stepCEK = return ()
       opBC = return ()
-      stackSize _ = return ()
+      changeStack _ = return ()
       countClos = return ()
 
 instance MonadFD4 FD4Prof where
       stepCEK = modify (\s -> s { stepsCEK = stepsCEK s + 1 })
       opBC = modify (\s -> s { opsBC = opsBC s + 1 })
-      stackSize st =
-            modify (\s -> s { maxStackSize = max (maxStackSize s) (length st) })
+      changeStack f =
+            modify (\s -> s { maxStackSize = max (maxStackSize s) (f (currStackSize s)),
+                              currStackSize = f (currStackSize s) })
       countClos = modify (\s -> s { clos = clos s + 1 })
 
 runFD4Prof :: FD4Prof a -> Conf -> IO (Either Error a)
