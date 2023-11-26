@@ -38,6 +38,9 @@ import MonadFD4
 import TypeChecker ( tc, tcDecl )
 import Bytecompile
 import Optimization
+import ClosureConvert
+import IR
+import C
 
 prompt :: String
 prompt = "FD4> "
@@ -54,7 +57,7 @@ parseMode = (,,) <$>
       <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
-  -- <|> flag' CC ( long "cc" <> short 'c' <> help "Compilar a código C")
+      <|> flag' CC ( long "cc" <> short 'c' <> help "Compilar a código C")
   -- <|> flag' Canon ( long "canon" <> short 'n' <> help "Imprimir canonicalización")
   -- <|> flag' Assembler ( long "assembler" <> short 'a' <> help "Imprimir Assembler resultante")
   -- <|> flag' Build ( long "build" <> short 'b' <> help "Compilar")
@@ -83,6 +86,7 @@ main = execParser opts >>= go
     runProfMode RunVM opt files = runOrFailProf (Conf opt RunVM True) (mapM_ runVMFile files)
     runProfMode CEK opt files = runOrFailProf (Conf opt CEK True) $ mapM_ compileCEK files
     runProfMode Typecheck opt files = runOrFailProf (Conf opt Typecheck True) $ mapM_ compileTypeCheck files
+    runProfMode CC opt files = runOrFailProf (Conf opt CC True) $ mapM_ compileCC files
     runProfMode m opt files = runOrFailProf (Conf opt m True) $ mapM_ compileFile files
 
     runDefaultMode :: Mode -> Bool -> [FilePath] -> IO ()
@@ -92,6 +96,7 @@ main = execParser opts >>= go
     runDefaultMode RunVM opt files = runOrFail (Conf opt RunVM False) (mapM_ runVMFile files)
     runDefaultMode CEK opt files = runOrFail (Conf opt CEK False) $ mapM_ compileCEK files
     runDefaultMode Typecheck opt files = runOrFail (Conf opt Typecheck False) $ mapM_ compileTypeCheck files
+    runDefaultMode CC opt files = runOrFail (Conf opt CC False) $ mapM_ compileCC files
     runDefaultMode m opt files = runOrFail (Conf opt m False) $ mapM_ compileFile files
 
 runOrFail :: Conf -> FD4 a -> IO a
@@ -157,6 +162,17 @@ compileCEK f = do
     evalAndUpdate (Decl _ name _ body) = do t' <- evalCEK body
                                             updateDecl name t'
     getBody (Decl _ _ _ body) = body
+
+compileCC :: MonadFD4 m => FilePath -> m ()
+compileCC f = do
+    decls <- loadFile f
+    mapM_ handleDecl decls
+    s1 <- get
+    opt <- getOpt
+    when opt $ optimization 10 (glb s1)
+    s2 <- get
+    let s = ir2C $ IrDecls $ runCC (glb s2)
+    liftIO $ writeFile "out.c" s
 
 compileTypeCheck :: MonadFD4 m => FilePath -> m ()
 compileTypeCheck f = do
@@ -246,6 +262,9 @@ handleDecl' d = do
         (Decl p x ty tt) <- tcDecl d
         addDecl (Decl p x ty tt)
     Bytecompile -> do
+        tcd <- tcDecl d
+        addDecl tcd
+    CC -> do
         tcd <- tcDecl d
         addDecl tcd
     _ ->

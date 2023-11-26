@@ -1,0 +1,8 @@
+let suma : Nat -> (Nat -> Nat) =
+    fun (x:Nat) ->
+        fix (suma1:Nat->Nat) (m:Nat) ->
+            ifz m then x else 1 + (suma1 (m-1))
+
+let suma5 : Nat -> Nat = suma 5
+
+let ret : Nat = print "X = " (suma5 10)

@@ -21,7 +21,7 @@ Definiciones de distintos tipos de datos:
 module Lang where
 
 import           Common                         ( Pos )
-import           Data.List.Extra                ( nubSort )
+import           Data.List.Extra                ( nubSortOn )
 
 -- | AST the términos superficiales
 data STm info ty var =
@@ -187,10 +187,10 @@ mapInfo f (IfZ i x y z) = IfZ (f i) (mapInfo f x) (mapInfo f y) (mapInfo f z)
 mapInfo f (Let i x xty y (Sc1 z)) = Let (f i) x xty (mapInfo f y) (Sc1 $ mapInfo f z)
 
 -- | Obtiene los nombres de variables (abiertas o globales) de un término.
-freeVars :: Tm info Var -> [Name]
-freeVars tm = nubSort $ go tm [] where
-  go (V _ (Free   v)          ) xs = v : xs
-  go (V _ (Global v)          ) xs = v : xs
+freeVars :: TTerm -> [(Name,Ty)]
+freeVars tm = nubSortOn fst $ go tm [] where
+  go (V (_,ty) (Free   v)     ) xs = (v,ty) : xs
+  go (V _ (Global v)          ) xs = xs
   go (V _ _                   ) xs = xs
   go (Lam _ _ _ (Sc1 t)       ) xs = go t xs
   go (App   _ l r             ) xs = go l $ go r xs

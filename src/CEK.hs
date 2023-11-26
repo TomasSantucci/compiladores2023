@@ -105,7 +105,7 @@ substRem [] body scs = body
 substRem env body scs = varChanger (\_ p n -> V p (Free n)) bnd body
    where bnd depth p i 
              | i < depth + scs = V p (Bound i)
-             | i <= depth + scs + length env = value2Term (env!!(i-depth-1))
+             | i <= depth + scs + length env = value2Term (env!!(i-depth-scs))
              | otherwise  = V p (Bound i)
 
 value2Term :: CEKVal -> TTerm
@@ -114,6 +114,9 @@ value2Term (NumVal n) =
 
 value2Term (ClosV (ClosFun [] body x xty)) =
   Lam (NoPos,(FunTy xty (getTy body) Nothing)) x xty (Sc1 body)
+
+value2Term (ClosV (ClosFix [] body f fty x xty)) =
+  Fix (NoPos,fty) f fty x xty (Sc2 body)
 
 value2Term (ClosV (ClosFun env body x xty)) =
   let body' = substRem env body 1 in
