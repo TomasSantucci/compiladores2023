@@ -32,7 +32,7 @@ seek (V _ (Global n)) env k = do
   decl <- lookupDecl n
   case decl of
     Just t -> seek t [] k
-    Nothing -> failFD4 ("Variable global" ++ n ++ "no declarada.")
+    Nothing -> failFD4 ("Variable global " ++ n ++ " no declarada.")
 
 seek (V _ (Free n)) env k =
   failFD4 ("Error por variable libre.")
@@ -110,21 +110,21 @@ substRem env body scs = varChanger (\_ p n -> V p (Free n)) bnd body
 
 value2Term :: CEKVal -> TTerm
 value2Term (NumVal n) =
-  Const (NoPos,NatTy Nothing) (CNat n)
+  Const (noInfo,NatTy Nothing) (CNat n)
 
 value2Term (ClosV (ClosFun [] body x xty)) =
-  Lam (NoPos,(FunTy xty (getTy body) Nothing)) x xty (Sc1 body)
+  Lam (noInfo,(FunTy xty (getTy body) Nothing)) x xty (Sc1 body)
 
 value2Term (ClosV (ClosFix [] body f fty x xty)) =
-  Fix (NoPos,fty) f fty x xty (Sc2 body)
+  Fix (noInfo,fty) f fty x xty (Sc2 body)
 
 value2Term (ClosV (ClosFun env body x xty)) =
   let body' = substRem env body 1 in
-  Lam (NoPos,(FunTy xty (getTy body) Nothing)) x xty (Sc1 body')
+  Lam (noInfo,(FunTy xty (getTy body) Nothing)) x xty (Sc1 body')
 
 value2Term (ClosV (ClosFix env body f fty x xty)) =
   let body' = substRem env body 2 in
-  Fix (NoPos,fty) f fty x xty (Sc2 body')
+  Fix (noInfo,fty) f fty x xty (Sc2 body')
 
 evalCEK :: (MonadFD4 m) => TTerm -> m TTerm
 evalCEK t = do v <- seek t [] []

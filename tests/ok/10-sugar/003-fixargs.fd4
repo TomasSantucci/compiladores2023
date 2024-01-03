@@ -1,0 +1,4 @@
+let x:Nat->Nat->Nat->Nat =
+    fix (f:Nat->Nat->Nat->Nat) (x1:Nat) (x2:Nat) (x3:Nat) -> x3
+
+# TODO preguntar, hay un error en la regla del apunte?

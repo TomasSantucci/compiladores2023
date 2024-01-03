@@ -34,7 +34,7 @@ import Prettyprinter
       parens,
       Doc,
       Pretty(pretty), emptyDoc )
-import MonadFD4 ( gets, MonadFD4 )
+import MonadFD4 ( gets, MonadFD4, failPosFD4 )
 import Global ( GlEnv(glb) )
 
 resugarTy :: Ty -> STy
@@ -43,11 +43,62 @@ resugarTy (NatTy (Just n)) = SSyn n
 resugarTy (FunTy t1 t2 (Just n)) = SSyn n
 resugarTy (FunTy t1 t2 Nothing) = SFunTy (resugarTy t1) (resugarTy t2)
 
+
+resugar :: STm (Pos,Maybe Int) STy Name -> STerm
+-- Casos base
+resugar (SV (p, _) var) = SV p var
+resugar (SConst (p, _) c) = SConst p c
+resugar (SLam (p, Nothing) bs t) = SLam p bs (resugar t)
+resugar (SApp (p, _) t1 t2) = SApp p (resugar t1) (resugar t2)
+resugar (SPrint (p, _) str t) = SPrint p str (resugar t)
+resugar (SPrintFun (p, _) str) = SPrintFun p str
+resugar (SBinaryOp (p, _) op t1 t2) = SBinaryOp p op (resugar t1) (resugar t2)
+resugar (SFix (p, Nothing) (v, vty) bs t) = SFix p (v, vty) bs (resugar t)
+resugar (SIfZ (p, _) t1 t2 t3) = SIfZ p (resugar t1) (resugar t2) (resugar t3)
+resugar (SLet _ _ (p, Nothing) (v, vty) bs def body) =
+  SLet True False p (v, vty) bs (resugar def) (resugar body)
+
+-- Casos de aplicación de reglas
+resugar (SLet _ _ (p, Just 0) (x, xty) [] def body) =
+  SLet False False p (x, xty) [] (resugar def) (resugar body)
+
+resugar (SLet _ _ (p, Just 1) (f, fty) [] (SLam _ [(x, xty)] t) body) =
+  SLet True False p (f, getReturnSTy fty 1) [(x, xty)] (resugar t) (resugar body)
+
+resugar (SLam (p, Just 2) [(x, xty)] t) =
+  let SLam _ bs t' = resugar t
+  in SLam p ((x, xty) : bs) t'
+
+resugar (SFix (p, Just 3) (f, fty) [(x, xty)] t) =
+  let SLam _ bs t' = resugar t
+  in SFix p (f, fty) ((x, xty) : bs) t'
+
+resugar (SLet _ _ (p, Just 4) (f, fty) [] def body) =
+  let SLam _ bs t' = resugar def
+  in SLet True False p (f, getReturnSTy fty (length bs)) bs t' (resugar body)
+
+resugar (SLet _ _ (p, Just 5) (f, fty) [] def body) =
+  let SFix _ _ [(x, xty)] def' = resugar def
+  in SLet True True p (f, getReturnSTy fty 1) [(x, xty)] def' (resugar body)
+
+resugar (SLet _ _ (p, Just 6) (f, fty) [] def body) =
+  let SFix _ _ bs (SLam _ bs' def') = resugar def
+  in SLet True True p (f, getReturnSTy fty (length bs + 1)) (bs ++ bs') def' (resugar body)
+
+resugar _ = undefined
+
+
+-- Retorna el tipo obtenido al aplicar sus primeros n argumentos
+getReturnSTy :: STy -> Int -> STy
+getReturnSTy sty 0 = sty
+getReturnSTy (SFunTy sty1 sty2) n = getReturnSTy sty2 (n-1)
+getReturnSTy sty _ = sty
+
 -- | 'openAll' convierte términos locally nameless
 -- a términos fully named abriendo todos las variables de ligadura que va encontrando
 -- Debe tener cuidado de no abrir términos con nombres que ya fueron abiertos.
 -- Estos nombres se encuentran en la lista ns (primer argumento).
-openAll :: (i -> Pos) -> [Name] -> Tm i Var -> STerm
+openAll :: (i -> p) -> [Name] -> Tm i Var -> STm p STy Name
 openAll gp ns (V p v) = case v of 
       Bound i ->  SV (gp p) $ "(Bound "++show i++")" --este caso no debería aparecer
                                                --si el término es localmente cerrado
@@ -68,7 +119,7 @@ openAll gp ns (Print p str t) = SPrint (gp p) str (openAll gp ns t)
 openAll gp ns (BinaryOp p op t u) = SBinaryOp (gp p) op (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Let p v ty m n) = 
     let v'= freshen ns v 
-    in  SLet False False (gp p) (v',resugarTy ty) [] (openAll gp ns m) (openAll gp (v':ns) (open v' n))
+    in  SLet True False (gp p) (v',resugarTy ty) [] (openAll gp ns m) (openAll gp (v':ns) (open v' n))
 
 --Colores
 constColor :: Doc AnsiStyle -> Doc AnsiStyle
@@ -231,16 +282,73 @@ pp :: MonadFD4 m => TTerm -> m String
 {- pp = show -}
 pp t = do
        gdecl <- gets glb
-       return (render . t2doc False $ openAll fst (map declName gdecl) t)
+       return (render . t2doc False $ openAll (pos . fst) (map declName gdecl) t)
 
 render :: Doc AnsiStyle -> String
 render = unpack . renderStrict . layoutSmart defaultLayoutOptions
 
+-- SLam info [(var, ty)] (STm info ty var)
+resugarDecl :: MonadFD4 m => Decl TTerm -> [Name] -> m SDecl
+resugarDecl (Decl p (Just 0) f fty t) names = do
+  let SLam _ [(x,xty)] body = resugar $ openAll (extractInfo . fst) names t
+  return $ SDecl p f
+           (getReturnSTy (resugarTy fty) 1)
+           [(x,xty)] False
+           body
+
+resugarDecl (Decl p (Just 1) f fty t) names = do
+  let SLam _ bs body = resugar $ openAll (extractInfo . fst) names t
+  return $ SDecl p f
+           (getReturnSTy (resugarTy fty) (length bs))
+           bs False
+           body
+
+resugarDecl (Decl p (Just 2) f _ t) names = do
+  let SFix _ (_,fty) [(x,xty)] body = resugar $ openAll (extractInfo . fst) names t
+  return $ SDecl p f
+           (getReturnSTy fty 1)
+           [(x,xty)] True
+           body
+
+resugarDecl (Decl p (Just 3) f fty t) names = do
+  let SFix _ (f',fty') [(x,xty)] (SLam _ bs body) = resugar $ openAll (extractInfo . fst) names t
+  return $ SDecl p f
+           (getReturnSTy fty' (length bs + 1))
+           ((x,xty):bs) True
+           body
+
+resugarDecl (Decl p Nothing f fty t) names = do
+  let body' = resugar $ openAll (extractInfo . fst) names t
+  return $ SDecl p f
+           (resugarTy fty)
+           [] False
+           body'
+
+resugarDecl (Decl p (Just n) f fty t) _ =
+  failPosFD4 p ("Regla " ++ show n ++ " no implementada")
+
 -- | Pretty printing de declaraciones
 ppDecl :: MonadFD4 m => Decl TTerm -> m String
-ppDecl (Decl p x ty t) = do 
+ppDecl d = do
   gdecl <- gets glb
+  sd <- resugarDecl d (map declName gdecl)
+  ppSDecl sd
+
+ppSDecl :: MonadFD4 m => SDecl -> m String
+ppSDecl (SDecl p v vty [] False body) =
   return (render $ sep [defColor (pretty "let")
-                       , binding2doc False (x,ty)
-                       , defColor (pretty "=")] 
-                   <+> nest 2 (t2doc False (openAll fst (map declName gdecl) t)))
+                       , sbinding2doc False (v,vty)
+                       , defColor (pretty "=")]
+                   <+> nest 2 (t2doc False body))
+
+ppSDecl (SDecl p f rty bs isrec body) = do
+  let letstr = if isrec then "let rec" else "let"
+  return (render $ sep [defColor (pretty letstr)
+                       , pretty f
+                       , sbindings2doc bs
+                       , pretty ":"
+                       , sty2doc rty
+                       , defColor (pretty "=")]
+                   <+> nest 2 (t2doc False body))
+
+ppSDecl (SDefType p _ _) = failPosFD4 p "No es posible imprimir una definición de tipos."

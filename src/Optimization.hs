@@ -21,10 +21,10 @@ moduleOptimization ts = do
     return decls3
 
 constFoldingProp :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
-constFoldingProp (Decl p s ty t) = do
+constFoldingProp (Decl p r s ty t) = do
     t1 <- propagation t
     t2 <- constFolding t1
-    return (Decl p s ty t2)
+    return (Decl p r s ty t2)
 
 constFolding :: MonadFD4 m => TTerm -> m TTerm
 constFolding (BinaryOp i op t1 t2) = do
@@ -105,23 +105,23 @@ hasSideEffects t = hasPrint t
 deadCodeElim :: MonadFD4 m => [Decl TTerm] -> m [Decl TTerm]
 deadCodeElim [] = return []
 deadCodeElim [t] = return [t]
-deadCodeElim (t@(Decl _ n _ tt):ts) = do
+deadCodeElim (t@(Decl _ _ n _ tt):ts) = do
     let occursLater = any (globalVarSearch n . getBody) ts
     if occursLater || (hasSideEffects tt)
         then do ts' <- deadCodeElim ts
                 return $ t : ts'
         else deadCodeElim ts
     where
-        getBody (Decl _ _ _ body) = body
+        getBody (Decl _ _ _ _ body) = body
 
 inline :: MonadFD4 m => [Decl TTerm] -> m [Decl TTerm]
 inline m = inline' m []
 
 inline' :: MonadFD4 m => [Decl TTerm] -> [Decl TTerm] -> m [Decl TTerm]
 inline' [] _ = return []
-inline' ((Decl p name ty body) : ds) decls = do
+inline' ((Decl p r name ty body) : ds) decls = do
     body' <- inlineExpBasic decls body
-    let dec = Decl p name ty body'
+    let dec = Decl p r name ty body'
     ds' <- inline' ds (dec:decls)
     return $ dec : ds'
 
@@ -130,22 +130,22 @@ inlineExpBasic [] t = return t
 
 inlineExpBasic decs t@(App _ (V _ (Global n)) t1@(Const ty (CNat m))) = do
     case filter (\d -> declName d == n) decs of
-        [Decl _ _ _ (Lam _ _ _ ct)] -> inlineExpBasic decs (subst t1 ct)
-        [Decl _ _ _ (Fix {})] -> return t
+        [Decl _ _ _ _ (Lam _ _ _ ct)] -> inlineExpBasic decs (subst t1 ct)
+        [Decl _ _ _ _ (Fix {})] -> return t
         _ -> failFD4 "Error haciendo inline expansion."
 
 inlineExpBasic decs t@(App i (V _ (Global n)) t1) = do
     case filter (\d -> declName d == n) decs of
-        [Decl _ _ _ (Lam p x _ sc)] -> do
+        [Decl _ _ _ _ (Lam p x _ sc)] -> do
             let tzTy = getTy t1
             inlineExpBasic decs (Let i x tzTy t1 sc)
-        [Decl _ _ _ (Fix {})] -> return t
+        [Decl _ _ _ _ (Fix {})] -> return t
         _ -> failFD4 "Error haciendo inline expansion."
 
 inlineExpBasic decs t@(V _ (Global n)) =
     case filter (\d -> declName d == n) decs of
-        [Decl _ _ _ (Fix {})] -> return t
-        [Decl _ _ _ t'] -> return t'
+        [Decl _ _ _ _ (Fix {})] -> return t
+        [Decl _ _ _ _ t'] -> return t'
         _ -> failFD4 "Error haciendo inline expansion."
 
 inlineExpBasic decs t = applyRec t (inlineExpBasic decs) ----TODO chequar terminos abiertos

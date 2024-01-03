@@ -119,7 +119,7 @@ closureConvert (Let _ x xty t1 c@(Sc1 t2)) = do
 closureConvert _ = return (IrVar "")
 
 runCC :: [Decl TTerm] -> [IrDecl]
-runCC ((Decl _ n ty t):rs) =
+runCC ((Decl _ _ n ty t):rs) =
     let ((irt,_),sideeff) = runWriter $ runStateT (closureConvert t) (0,"_" ++ n)
         rs' = runCC rs
         ird = IrVal n (ty2irty ty) irt

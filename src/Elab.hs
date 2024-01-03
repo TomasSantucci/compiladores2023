@@ -28,83 +28,88 @@ elab' env (SV p v) =
   -- Tenemos que ver si la variable es Global o es un nombre local
   -- En env llevamos la lista de nombres locales.
   if v `elem` env
-    then  return (V p (Free v))
-    else  return (V p (Global v))
+    then  return (V (Info p Nothing) (Free v))
+    else  return (V (Info p Nothing) (Global v))
 
-elab' _ (SConst p c) = return (Const p c)
+elab' _ (SConst p c) = return (Const (Info p Nothing) c)
 
 elab' env (SLam p [(v,ty)] t) = do
   t' <- elab' (v:env) t
   ty' <- elabTy p ty
-  return $ Lam p v ty' (close v t')
+  return $ Lam (Info p Nothing) v ty' (close v t')
 
 elab' env (SLam p ((v,ty):bs) t) = do
   t' <- elab' (v:env) (SLam p bs t)
   ty' <- elabTy p ty
-  return $ Lam p v ty' (close v t')
+  return $ Lam (Info p (Just 2)) v ty' (close v t')
 
 -- falta caso error sin argumentos? TODO
 elab' env (SFix p (f,fty) [(x,xty)] t) = do
   t' <- elab' (x:f:env) t
   fty' <- elabTy p fty
   xty' <- elabTy p xty
-  return $ Fix p f fty' x xty' (close2 f x t')
+  return $ Fix (Info p Nothing) f fty' x xty' (close2 f x t')
 
 elab' env (SFix p (f,fty) ((x,xty):bs) t) = do
   t' <- elab' (x:f:env) (SLam p bs t)
   fty' <- elabTy p fty
   xty' <- elabTy p xty
-  return $ Fix p f fty' x xty' (close2 f x t')
+  return $ Fix (Info p (Just 3)) f fty' x xty' (close2 f x t')
 
 elab' env (SIfZ p c t e) = do
   t1 <- elab' env c
   t2 <- elab' env t
   t3 <- elab' env e
-  return $ IfZ p t1 t2 t3
+  return $ IfZ (Info p Nothing) t1 t2 t3
 -- Operadores binarios
-elab' env (SBinaryOp i o t u) = do
+elab' env (SBinaryOp p o t u) = do
   t1 <- elab' env t
   t2 <- elab' env u
-  return $ BinaryOp i o t1 t2
+  return $ BinaryOp (Info p Nothing) o t1 t2
 -- Operador Print
-elab' env (SPrint i str t) = do
+elab' env (SPrint p str t) = do
   t' <- elab' env t
-  return $ Print i str t'
+  return $ Print (Info p Nothing) str t'
 
-elab' env (SPrintFun i str) = do
+elab' env (SPrintFun p str) = do
   let var = freshen env "x"
-  elab' env (SLam i [(var,SNatTy)] (SPrint i str (SV i var)))
+  elab' env (SLam p [(var,SNatTy)] (SPrint p str (SV p var)))
 
 -- Aplicaciones generales
 elab' env (SApp p h a) = do
   t1 <- elab' env h
   t2 <- elab' env a
-  return $ App p t1 t2
+  return $ App (Info p Nothing) t1 t2
 
 elab' env (SLet parens False p (v,vty) [] def body) = do
   t1 <- elab' env def
   t2 <- elab' (v:env) body
   vty' <- elabTy p vty
-  return $ Let p v vty' t1 (close v t2)
+  let rule = if parens then Nothing else Just 0
+  return $ Let (Info p rule) v vty' t1 (close v t2)
 
 elab' env (SLet parens False p (v,vty) (b:bs) def body) = do
   def' <- elab' env (SLam p (b:bs) def)
   vty' <- getFunType p (map snd (b:bs)) vty
   body' <- elab' (v:env) body
-  return $ Let p v vty' def' (close v body') --CHEAQUEAR LA POSICION TODO
+  let rule = if null bs then Just 1 else Just 4 -- TODO creo que la regla 1 y la 4 son la misma, y no importa si es una u otra
+  return $ Let (Info p rule) v vty' def' (close v body') --CHEAQUEAR LA POSICION TODO
 
 elab' env (SLet parens True p (v,vty) [(x,xty)] def body) =do
   vty' <- getFunType p [xty] vty
   xty' <- elabTy p xty
-  t' <- elab' env def
-  let def' = Fix p v vty' x xty' (close2 v x t')
-  body' <- (elab' (v:env) body)
-  return $ Let p v vty' def' (close v body')
+  t' <- elab' (v:x:env) def
+  let def' = Fix (Info p Nothing) v vty' x xty' (close2 v x t')
+  body' <- elab' (v:env) body
+  return $ Let (Info p (Just 5)) v vty' def' (close v body')
 
 elab' env (SLet parens True p (f,rty) ((x,xty):bs) def body) = do
-  fty <- getFunSType (map snd bs) rty
-  let def' = SLam p bs def
-  elab' env (SLet parens True p (f,fty) [(x,xty)] def' body)
+  fty <- getFunType p (map snd ((x,xty):bs)) rty
+  xty' <- elabTy p xty
+  def1 <- elab' (f:x:env) (SLam p bs def)
+  let def2 = Fix (Info p Nothing) f fty x xty' (close2 f x def1)
+  body' <- elab' (f:env) body
+  return $ Let (Info p (Just 6)) f fty def2 (close f body')
 
 elab' env t =
   failFD4 "Patrón no reconocido para elab."
@@ -153,23 +158,27 @@ elabDecl (SDefType p n sty) = do
 elabDecl (SDecl p v vty [] False t) = do
   t' <- elab t
   vty' <- elabTy p vty
-  return $ Just $ Decl p v vty' t'
+  return $ Just $ Decl p Nothing v vty' t'
 
-elabDecl (SDecl p f rty bs False t) = do
-  fty <- getFunType p (map snd bs) rty
-  t' <- elab (SLam p bs t)
-  return $ Just $ Decl p f fty t'
+elabDecl (SDecl p f rty (b:bs) False t) = do
+  fty <- getFunType p (map snd (b:bs)) rty
+  t' <- elab (SLam p (b:bs) t)
+  let rule = if null bs then Just 0 else Just 1
+  return $ Just $ Decl p rule f fty t'
 
 elabDecl (SDecl p f rty [(x,xty)] True t) = do
   fty <- getFunType p [xty] rty
   sfty <- getFunSType [xty] rty
   t' <- elab (SFix p (f,sfty) [(x,xty)] t)
-  return $ Just $ Decl p f fty t'
+  return $ Just $ Decl p (Just 2) f fty t'
 
 elabDecl (SDecl p f rty ((x,xty):bs) True t) = do
-  fty <- getFunSType (map snd bs) rty
-  let t' = (SLam p bs t)
-  elabDecl (SDecl p f fty [(x,xty)] True t')
+  fty <- getFunType p (map snd ((x,xty):bs)) rty
+  sfty <- getFunSType (map snd ((x,xty):bs)) rty
+  let t1 = (SLam p bs t)
+  t2 <- elab (SFix p (f,sfty) [(x,xty)] t1)
+  return $ Just $ Decl p (Just 3) f fty t2
+
 
 elabDecl (SDecl p _ _ _ _ _) = do
   failPosFD4 p "Patrón no reconocido por elabDecl."

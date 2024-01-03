@@ -159,9 +159,9 @@ compileCEK f = do
     s3 <- get
     when prof $ printFD4 $ "Maquina CEK ejectuto en " ++ (show (stepsCEK s3)) ++ " pasos"
   where
-    evalAndUpdate (Decl _ name _ body) = do t' <- evalCEK body
-                                            updateDecl name t'
-    getBody (Decl _ _ _ body) = body
+    evalAndUpdate (Decl _ _ name _ body) = do t' <- evalCEK body
+                                              updateDecl name t'
+    getBody (Decl _ _ _ _ body) = body
 
 compileCC :: MonadFD4 m => FilePath -> m ()
 compileCC f = do
@@ -226,29 +226,29 @@ parseIO filename p x = case runP p x filename of
                   Right r -> return r
 
 evalDecl :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
-evalDecl (Decl p x ty e) = do
+evalDecl (Decl p r x ty e) = do
     e' <- eval e
-    return (Decl p x ty e')
+    return (Decl p r x ty e')
 
 handleDecl ::  MonadFD4 m => SDecl -> m ()
 handleDecl dec = do
   dec' <- elabDecl dec
   case dec' of
     Nothing -> return ()
-    Just d@(Decl p x ty t) -> handleDecl' d
+    Just d@(Decl p r x ty t) -> handleDecl' d
 
 handleDecl' :: MonadFD4 m => Decl Term -> m ()
 handleDecl' d = do
   m <- getMode
   case m of
     InteractiveCEK -> do
-        (Decl p x ty tt) <- tcDecl d
+        (Decl p r x ty tt) <- tcDecl d
         te <- evalCEK tt
-        addDecl (Decl p x ty te)
+        addDecl (Decl p r x ty te)
     Interactive -> do
-        (Decl p x ty tt) <- tcDecl d
+        (Decl p r x ty tt) <- tcDecl d
         te <- eval tt
-        addDecl (Decl p x ty te)
+        addDecl (Decl p r x ty te)
     Typecheck -> do
         f <- getLastFile
         td <- tcDecl d
@@ -259,8 +259,8 @@ handleDecl' d = do
         ed <- evalDecl td
         addDecl ed
     CEK -> do
-        (Decl p x ty tt) <- tcDecl d
-        addDecl (Decl p x ty tt)
+        (Decl p r x ty tt) <- tcDecl d
+        addDecl (Decl p r x ty tt)
     Bytecompile -> do
         tcd <- tcDecl d
         addDecl tcd

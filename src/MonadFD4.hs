@@ -163,8 +163,8 @@ updateGlbDecls ds = modify (\s -> s {glb = ds, cantDecl = length ds})
 
 updateDecl name t = modify (\s -> s {glb = replace (glb s) name t })
   where replace [] name t = []
-        replace (d@(Decl i n ty _):ds) name t | name == n = ((Decl i n ty t):ds)
-        replace (d@(Decl i n ty _):ds) name t | otherwise = d: replace ds name t
+        replace (d@(Decl i r n ty _):ds) name t | name == n = ((Decl i r n ty t):ds)
+        replace (d@(Decl i r n ty _):ds) name t | otherwise = d: replace ds name t
 
 ----
 -- Importante, no eta-expandir porque GHC no hace una

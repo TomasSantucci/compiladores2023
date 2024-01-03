@@ -20,7 +20,7 @@ Definiciones de distintos tipos de datos:
 
 module Lang where
 
-import           Common                         ( Pos )
+import           Common                         ( Pos(NoPos) )
 import           Data.List.Extra                ( nubSortOn )
 
 -- | AST the términos superficiales
@@ -76,6 +76,7 @@ data BinaryOp = Add | Sub
 -- | tipo de datos de declaraciones, parametrizado por el tipo del cuerpo de la declaración
 data Decl a = Decl
   { declPos  :: Pos
+  , declRule :: Maybe Int
   , declName :: Name
   , declType :: Ty
   , declBody :: a
@@ -108,8 +109,20 @@ data Tm info var =
   | Let info Name Ty (Tm info var) (Scope info var)
   deriving (Show, Functor)
 
-type Term = Tm Pos Var       -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición
-type TTerm = Tm (Pos,Ty) Var -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición y tipo
+type Term = Tm TermInfo Var       -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición y regla de desugar
+type TTerm = Tm (TermInfo,Ty) Var -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición, tipo y regla de desugar
+
+data TermInfo = Info {
+  pos :: Pos,
+  sug :: Maybe Int
+} deriving Show
+
+extractInfo :: TermInfo -> (Pos,Maybe Int)
+extractInfo (Info p s) = (p,s)
+
+noInfo :: TermInfo
+noInfo = Info NoPos Nothing
+
 type Module = [Decl TTerm]
 
 data Var =
@@ -172,7 +185,7 @@ getTy :: TTerm -> Ty
 getTy = snd . getInfo
 
 getPos :: TTerm -> Pos
-getPos = fst . getInfo
+getPos = pos . fst . getInfo
 
 -- | map para la info de un término
 mapInfo :: (a -> b) -> Tm a var -> Tm b var
@@ -189,7 +202,7 @@ mapInfo f (Let i x xty y (Sc1 z)) = Let (f i) x xty (mapInfo f y) (Sc1 $ mapInfo
 -- | Obtiene los nombres de variables (abiertas o globales) de un término.
 freeVars :: TTerm -> [(Name,Ty)]
 freeVars tm = nubSortOn fst $ go tm [] where
-  go (V (_,ty) (Free   v)     ) xs = (v,ty) : xs
+  go (V (_,ty) (Free v)       ) xs = (v,ty) : xs
   go (V _ (Global v)          ) xs = xs
   go (V _ _                   ) xs = xs
   go (Lam _ _ _ (Sc1 t)       ) xs = go t xs

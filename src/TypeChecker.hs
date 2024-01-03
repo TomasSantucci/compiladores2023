@@ -25,12 +25,12 @@ import Subst
 tc :: MonadFD4 m => Term         -- ^ término a chequear
                  -> [(Name,Ty)]  -- ^ entorno de tipado
                  -> m TTerm        -- ^ tipo del término
-tc (V p (Bound _)) _ = failPosFD4 p "typecheck: No deberia haber variables Bound"
+tc (V p (Bound _)) _ = failPosFD4 (pos p) "typecheck: No deberia haber variables Bound"
 tc (V p (Free n)) bs = case lookup n bs of
-                           Nothing -> failPosFD4 p $ "Variable no declarada "++ppName n
+                           Nothing -> failPosFD4 (pos p) $ "Variable no declarada "++ppName n
                            Just ty -> return (V (p,ty) (Free n)) 
 tc (V p (Global n)) bs = case lookup n bs of
-                           Nothing -> failPosFD4 p $ "Variable no declarada "++ppName n
+                           Nothing -> failPosFD4 (pos p) $ "Variable no declarada "++ppName n
                            Just ty -> return (V (p,ty) (Global n))
 tc (Const p (CNat n)) _ = return (Const (p,NatTy Nothing) (CNat n))
 tc (Print p str t) bs = do 
@@ -57,7 +57,7 @@ tc (App p t u) bs = do
 tc (Fix p f fty x xty t) bs = do
          (dom, cod) <- domCod (V (p,fty) (Free f))
          when (dom /= xty) $ do
-           failPosFD4 p "El tipo del argumento de un fixpoint debe coincidir con el \
+           failPosFD4 (pos p) "El tipo del argumento de un fixpoint debe coincidir con el \
                         \dominio del tipo de la función"
          let t' = open2 f x t
          tt' <- tc t' ((x,xty):(f,fty):bs)
@@ -104,7 +104,7 @@ domCod tt = case getTy tt of
 -- | 'tcDecl' chequea el tipo de una declaración
 -- y la agrega al entorno de tipado de declaraciones globales
 tcDecl :: MonadFD4 m  => Decl Term -> m (Decl TTerm)
-tcDecl (Decl p n ty t) = do
+tcDecl (Decl p r n ty t) = do
     --chequear si el nombre ya está declarado
     mty <- lookupTy n
     case mty of
@@ -112,5 +112,5 @@ tcDecl (Decl p n ty t) = do
                   s <- get
                   tt <- tc t (tyEnv s)
                   expect ty tt
-                  return (Decl p n ty tt) -- TODO hacer setTy a tt
+                  return (Decl p r n ty tt) -- TODO hacer setTy a tt
         Just _  -> failPosFD4 p $ n ++" ya está declarado"

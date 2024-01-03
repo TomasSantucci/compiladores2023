@@ -1,0 +1,2 @@
+let x:Nat->(Nat->Nat)->Nat->Nat =
+    fun (x1:Nat) (x2:Nat->Nat) (x3:Nat) -> x2 x1

@@ -257,11 +257,11 @@ module2term m = do
 
 module2term' :: MonadFD4 m => Module -> [Name] -> m TTerm
 module2term' [] _ = failFD4 "Módulo inválido."
-module2term' [Decl _ _ _ t] decs = glb2bound t decs 0
-module2term' ((Decl p x xty t):ds) decs = do
+module2term' [Decl _ _ _ _ t] decs = glb2bound t decs 0
+module2term' ((Decl p r x xty t):ds) decs = do
     t' <- module2term' ds (x:decs)
     tbound <- glb2bound t decs 0
-    return (Let (p,xty) x xty tbound (Sc1 t'))
+    return (Let (Info p Nothing,xty) x xty tbound (Sc1 t'))
 
 -- | Toma un bytecode, lo codifica y lo escribe un archivo
 bcWrite :: Bytecode -> FilePath -> IO ()

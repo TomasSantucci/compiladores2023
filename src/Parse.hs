@@ -131,13 +131,23 @@ atom =     (flip SConst <$> const <*> getPos)
 
 -- parsea un par (variable : tipo)
 binding :: P (Name, STy)
-binding = do v <- var
-             reservedOp ":"
-             ty <- typeP
-             return (v, ty)
+binding = do
+  v <- var
+  reservedOp ":"
+  ty <- typeP
+  return (v, ty)
+
+multibinding :: P [(Name, STy)]
+multibinding = do
+  v <- many1 var
+  reservedOp ":"
+  ty <- typeP
+  let res = map (\c -> (c,ty)) v
+  return res
 
 bindings :: P [(Name, STy)]
-bindings = many1 (parens binding)
+bindings = do res <- many1 (parens multibinding)
+              return (concat res)
 
 lam :: P STerm
 lam = do i <- getPos

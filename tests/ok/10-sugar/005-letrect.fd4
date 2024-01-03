@@ -1,0 +1,3 @@
+let x:Nat = let rec f (x0:Nat) : Nat = ifz x0 then 0 else 1 + (f (x0-1)) in f 5
+
+let res:Nat = print "x=" x
