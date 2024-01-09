@@ -361,7 +361,7 @@ void run(code init_c)
 		}
 
 		case DROP: {
-		    s--;
+		    e = e->next;
 			
 			break;
 		}
