@@ -117,6 +117,7 @@ showOps (DROP:xs)        = "DROP" : showOps xs
 showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
                            in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
+showOps (TAILCALL:xs)    = "TAILCALL" : showOps xs
 showOps (x:xs)           = show x : showOps xs
 
 opArgs :: Int -> Int
@@ -149,7 +150,9 @@ bct (Let _ _ _ def (Sc1 body)) = do
   cbody <- bct body
   return $ cdef ++ [SHIFT] ++ cbody
 
-bct t = bcc t
+bct t = do
+  t' <- bcc t
+  return $ t' ++ [RETURN]
 
 bcc :: MonadFD4 m => TTerm -> m Bytecode
 bcc (V _ (Bound i)) = return [ACCESS,i]
@@ -158,7 +161,7 @@ bcc (Const _ (CNat i)) = return [CONST,i]
 
 bcc (Lam _ _ _ (Sc1 t)) = do
   ct <- bct t
-  return $ [FUNCTION, (length ct) + 1] ++ ct ++ [RETURN]
+  return $ [FUNCTION, length ct] ++ ct
 
 bcc (App _ t1 t2) = do
   ct1 <- bcc t1
@@ -175,8 +178,8 @@ bcc (BinaryOp _ op t1 t2) = do
   return $ ct1 ++ ct2 ++ (op2bc op)
 
 bcc (Fix _ _ _ _ _ (Sc2 t)) = do
-  ct <- bcc t
-  return  $ [FUNCTION, (length ct) + 1] ++ ct ++ [RETURN,FIX]
+  ct <- bct t
+  return  $ [FUNCTION, length ct] ++ ct ++ [FIX]
 
 bcc (IfZ _ c t e) = do -- Jump solo salta si se encuentra un 0 en el stack top.
   cc <- bcc c
