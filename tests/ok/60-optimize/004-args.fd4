@@ -1,0 +1,3 @@
+let f (x y:Nat):Nat = x+y
+
+let ret:Nat = print "ret=" (f 1 2)

@@ -1,0 +1,5 @@
+let f (x:Nat):Nat = x+x
+
+let g (x:Nat):Nat = x+1
+
+let res:Nat = print "x=" (f (g 1))

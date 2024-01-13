@@ -1,0 +1,3 @@
+let rec f (x:Nat):Nat = ifz x then 0 else 1 + (f (x-1))
+
+let x:Nat->Nat = f

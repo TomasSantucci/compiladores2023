@@ -1,0 +1,5 @@
+let rec f (x:Nat):Nat = ifz x then 1 else f (x-1)
+
+let g (x:Nat):Nat = x+x
+
+let ret:Nat = print "x=" (f (g 2))

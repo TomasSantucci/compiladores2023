@@ -1,0 +1,3 @@
+let suc (x:Nat):Nat = x+1
+
+let f:Nat->Nat = fun (x:Nat) -> suc (x)
