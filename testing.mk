@@ -3,6 +3,7 @@ TESTDIRS += tests/ok/10-sugar
 TESTDIRS += tests/ok/20-tysym
 TESTDIRS += tests/ok/30-cek
 TESTDIRS += tests/ok/40-bytecode
+TESTDIRS += tests/ok/60-optimize
 
 TESTS	:= $(shell find $(TESTDIRS) -name '*.fd4' -type f | sort)
 
