@@ -106,40 +106,16 @@ propagation (Let i n ty t1 (Sc1 t2)) = do
 propagation t = applyRec t propagation
 
 applyRec :: MonadFD4 m => TTerm -> (TTerm -> m TTerm) -> m TTerm
-applyRec t@(Const _ _) f = return t
-applyRec t@(V _ _) f = return t
-applyRec (Lam i n ty (Sc1 t)) f = do
-    t' <- f t
-    return (Lam i n ty (Sc1 t'))
-
-applyRec (App i t1 t2) f = do
-    t1' <- f t1
-    t2' <- f t2
-    return (App i t1' t2')
-
-applyRec (Print i s t) f= do
-    t' <- f t
-    return (Print i s t')
-
-applyRec (Fix i n nty m mty (Sc2 t)) f= do
-    t' <- f t
-    return (Fix i n nty m mty (Sc2 t'))
-
-applyRec (BinaryOp i op t1 t2) f = do
-    t1' <- f t1
-    t2' <- f t2
-    return (BinaryOp i op t1' t2')
-
-applyRec (IfZ i t1 t2 t3) f = do
-    t1' <- f t1
-    t2' <- f t2
-    t3' <- f t3
-    return (IfZ i t1' t2' t3')
-
-applyRec (Let i n ty t1 (Sc1 t2)) f = do
-    t1' <- f t1
-    t2' <- f t2
-    return (Let i n ty t1' (Sc1 t2'))
+applyRec t f = case t of
+    Const{} -> return t
+    V{} -> return t
+    Lam i n ty (Sc1 t') -> Lam i n ty . Sc1 <$> f t'
+    App i t1 t2 -> App i <$> f t1 <*> f t2
+    Print i s t' -> Print i s <$> f t'
+    Fix i n nty m mty (Sc2 t') -> Fix i n nty m mty . Sc2 <$> f t'
+    BinaryOp i op t1 t2 -> BinaryOp i op <$> f t1 <*> f t2
+    IfZ i t1 t2 t3 -> IfZ i <$> f t1 <*> f t2 <*> f t3
+    Let i n ty t1 (Sc1 t2) -> Let i n ty <$> f t1 <*> (Sc1 <$> f t2)
 
 hasPrint :: TTerm -> Bool
 hasPrint (Print {}) = True
