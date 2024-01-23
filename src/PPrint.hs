@@ -99,26 +99,26 @@ getReturnSTy sty _ = sty
 -- Debe tener cuidado de no abrir términos con nombres que ya fueron abiertos.
 -- Estos nombres se encuentran en la lista ns (primer argumento).
 openAll :: (i -> p) -> [Name] -> Tm i Var -> STm p STy Name
-openAll gp ns (V p v) = case v of 
+openAll gp ns (V p v) = case v of
       Bound i ->  SV (gp p) $ "(Bound "++show i++")" --este caso no debería aparecer
                                                --si el término es localmente cerrado
       Free x -> SV (gp p) x
       Global x -> SV (gp p) x
 openAll gp ns (Const p c) = SConst (gp p) c
-openAll gp ns (Lam p x ty t) = 
-  let x' = freshen ns x 
+openAll gp ns (Lam p x ty t) =
+  let x' = freshen ns x
   in SLam (gp p) [(x',resugarTy ty)] (openAll gp (x':ns) (open x' t))
 openAll gp ns (App p t u) = SApp (gp p) (openAll gp ns t) (openAll gp ns u)
-openAll gp ns (Fix p f fty x xty t) = 
-  let 
+openAll gp ns (Fix p f fty x xty t) =
+  let
     x' = freshen ns x
     f' = freshen (x':ns) f
   in SFix (gp p) (f',resugarTy fty) [(x',resugarTy xty)] (openAll gp (x:f:ns) (open2 f' x' t))
 openAll gp ns (IfZ p c t e) = SIfZ (gp p) (openAll gp ns c) (openAll gp ns t) (openAll gp ns e)
 openAll gp ns (Print p str t) = SPrint (gp p) str (openAll gp ns t)
 openAll gp ns (BinaryOp p op t u) = SBinaryOp (gp p) op (openAll gp ns t) (openAll gp ns u)
-openAll gp ns (Let p v ty m n) = 
-    let v'= freshen ns v 
+openAll gp ns (Let p v ty m n) =
+    let v'= freshen ns v
     in  SLet True False (gp p) (v',resugarTy ty) [] (openAll gp ns m) (openAll gp (v':ns) (open v' n))
 
 --Colores
@@ -145,7 +145,7 @@ name2doc n = nameColor (pretty n)
 ppName :: Name -> String
 ppName = id
 
-ppTypeSyn :: (Maybe Name) -> Doc AnsiStyle -> Doc AnsiStyle
+ppTypeSyn :: Maybe Name -> Doc AnsiStyle -> Doc AnsiStyle
 ppTypeSyn Nothing doc = doc
 ppTypeSyn (Just n) _ = typeColor $ pretty n
 
@@ -160,7 +160,7 @@ ty2doc (FunTy x@(FunTy _ _ (Just n1)) y n2) =
   ppTypeSyn n2 (sep [parens (typeColor (pretty n1)), typeOpColor (pretty "->"),ty2doc y])
 
 ty2doc (FunTy x y n) =
-  ppTypeSyn n (sep [ty2doc x, typeOpColor (pretty "->"),ty2doc y]) 
+  ppTypeSyn n (sep [ty2doc x, typeOpColor (pretty "->"),ty2doc y])
 
 sty2doc :: STy -> Doc AnsiStyle
 sty2doc SNatTy = typeColor (pretty "Nat")
@@ -168,7 +168,7 @@ sty2doc (SFunTy x@(SFunTy _ _) y) =
   sep [parens (sty2doc x), typeOpColor (pretty "->"),sty2doc y]
 sty2doc (SFunTy x y) =
   sep [sty2doc x, typeOpColor (pretty "->"),sty2doc y]
-sty2doc (SSyn n) = typeColor $ pretty n 
+sty2doc (SSyn n) = typeColor $ pretty n
 
 -- | Pretty printer para tipos (String)
 ppTy :: Ty -> String
@@ -204,7 +204,7 @@ t2doc at (SLam _ bs t) =
   parenIf at $
   sep [sep [ keywordColor (pretty "fun")
            , sbindings2doc bs
-           , opColor(pretty "->")]
+           , opColor (pretty "->")]
       , nest 2 (t2doc False t)]
 
 t2doc at t@(SApp _ _ _) =

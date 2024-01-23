@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE RecordWildCards #-}
 {-|
 Module      : Bytecompile
 Description : Compila a bytecode. Ejecuta bytecode.
@@ -143,7 +142,7 @@ bct (IfZ _ c t e) = do
   cc <- bcc c
   ct <- bct t
   ce <- bct e
-  return $ cc ++ [CJUMP, (length ct) + 2] ++ ct ++ [JUMP,length ce] ++ ce
+  return $ cc ++ [CJUMP, length ct + 2] ++ ct ++ [JUMP,length ce] ++ ce
 
 bct (Let _ _ _ def (Sc1 body)) = do
   cdef <- bcc def
@@ -170,12 +169,12 @@ bcc (App _ t1 t2) = do
 
 bcc (Print _ str t) = do
   ct <- bcc t
-  return $ ct ++ [PRINT] ++ (string2bc str) ++ [NULL,PRINTN]
+  return $ ct ++ [PRINT] ++ string2bc str ++ [NULL,PRINTN]
 
 bcc (BinaryOp _ op t1 t2) = do
   ct1 <- bcc t1
   ct2 <- bcc t2
-  return $ ct1 ++ ct2 ++ (op2bc op)
+  return $ ct1 ++ ct2 ++ op2bc op
 
 bcc (Fix _ _ _ _ _ (Sc2 t)) = do
   ct <- bct t
@@ -185,7 +184,7 @@ bcc (IfZ _ c t e) = do -- Jump solo salta si se encuentra un 0 en el stack top.
   cc <- bcc c
   ct <- bcc t
   ce <- bcc e
-  return $ cc ++ [CJUMP, (length ct) + 2] ++ ct ++ [JUMP,length ce] ++ ce
+  return $ cc ++ [CJUMP, length ct + 2] ++ ct ++ [JUMP,length ce] ++ ce
 
 bcc (Let _ _ _ def (Sc1 body)) = do
   cdef <- bcc def
@@ -215,16 +214,15 @@ bcc2 (Let _ _ _ def (Sc1 body)) = do
 bcc2 t = bcc t
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
-bytecompileModule m = do 
+bytecompileModule m = do
   t <- module2term m
   bc <- bcc2 t
   return $ bc ++ [STOP]
 
 glb2bound :: MonadFD4 m => TTerm -> [Name] -> Int -> m TTerm
-glb2bound (V i (Global name)) decs n = do
-  case elemIndex name decs of
-    Nothing -> failFD4 ("Variable global no declarada: " ++ (show name))
-    Just d -> return $ V i (Bound (n + d))
+glb2bound (V i (Global name)) decs n = case elemIndex name decs of
+  Nothing -> failFD4 ("Variable global no declarada: " ++ show name)
+  Just d -> return $ V i (Bound (n + d))
 glb2bound v@(V _ _) _ _ = return v
 glb2bound (Lam p y ty (Sc1 t)) decs n = do
   t' <- glb2bound t decs (n+1)
@@ -255,8 +253,7 @@ glb2bound (Let p v vty m (Sc1 o)) decs n = do
   return $ Let p v vty m' (Sc1 o')
 
 module2term :: MonadFD4 m => Module -> m TTerm
-module2term m = do
-  module2term' m []
+module2term m = module2term' m []
 
 module2term' :: MonadFD4 m => Module -> [Name] -> m TTerm
 module2term' [] _ = failFD4 "Módulo inválido."
@@ -285,14 +282,14 @@ encodeStr :: Bytecode -> ([Word8],Bytecode)
 encodeStr [] = ([],[])
 encodeStr (b:bs) | b == NULL = ([fromIntegral b],bs)
                  | otherwise = let (str, remstr) = encodeStr bs in
-                               ((chrToUtf8 (chr b)) ++ str, remstr)
+                               (chrToUtf8 (chr b) ++ str, remstr)
 
 intToWords8 :: Int -> [Word8]
 intToWords8 n =
   [ fromIntegral (n .&. 0xFF)
-  , fromIntegral ((n `shiftR` 8) .&. 0xFF)
-  , fromIntegral ((n `shiftR` 16) .&. 0xFF)
-  , fromIntegral ((n `shiftR` 24) .&. 0xFF)
+  , fromIntegral (n `shiftR` 8 .&. 0xFF)
+  , fromIntegral (n `shiftR` 16 .&. 0xFF)
+  , fromIntegral (n `shiftR` 24 .&. 0xFF)
   ]
 
 -- | Toma un bytecode, y lo codifica a lista de bytes (Word8)
@@ -300,10 +297,10 @@ bcToWords8 :: Bytecode -> [Word8]
 bcToWords8 [] = []
 bcToWords8 (b:bs) = case opArgs b of
                   -2 -> let (ws, rm) = encodeStr bs
-                        in (fromIntegral b) : (ws ++ (bcToWords8 rm))
+                        in fromIntegral b : (ws ++ bcToWords8 rm)
                   -1 -> [fromIntegral b]
-                  0 -> (fromIntegral b) : (bcToWords8 bs)
-                  1 -> (fromIntegral b) : (intToWords8 (head bs)) ++ (bcToWords8 (tail bs))
+                  0 -> fromIntegral b : bcToWords8 bs
+                  1 -> fromIntegral b : intToWords8 (head bs) ++ bcToWords8 (tail bs)
                   _ -> []
 
 ---------------------------
@@ -312,7 +309,7 @@ bcToWords8 (b:bs) = case opArgs b of
 
 -- | Lee de un archivo y lo decodifica a bytecode
 bcRead :: FilePath -> IO Bytecode
-bcRead filename = (words8ToBc . un8 . decode) <$> (BS.readFile filename)
+bcRead filename = words8ToBc . un8 . decode <$> BS.readFile filename
 
 words8ToChr :: [Word8] -> Int -> Char
 words8ToChr [b] 1 = chr (fromIntegral b)
@@ -345,10 +342,10 @@ words8ToBc (b:bs) =
   let i = fromIntegral b in
   case opArgs i of
     -2 -> let (strBc, rm) = decodeStr bs
-          in i : strBc ++ (words8ToBc rm)
+          in i : strBc ++ words8ToBc rm
     -1 -> [i]
-    0 -> i : (words8ToBc bs)
-    1 -> i : (read32BitInt (take 4 bs)) : (words8ToBc (drop 4 bs))
+    0 -> i : words8ToBc bs
+    1 -> i : read32BitInt (take 4 bs) : words8ToBc (drop 4 bs)
     _ -> []
 
 type Env = [Val]
@@ -366,17 +363,17 @@ runBC' (STOP:c) _ _ = do
 runBC' (CONST:n:c) e s = do
   opBC
   changeStack (+1)
-  runBC' c e ((I n):s)
+  runBC' c e (I n:s)
 
 runBC' (ADD:c) e ((I n):(I m):s) = do
   opBC
   changeStack (\i -> i-1)
-  runBC' c e ((I (n+m)):s)
+  runBC' c e (I (n+m):s)
 
 runBC' (SUB:c) e ((I n):(I m):s) = do
   opBC
   changeStack (\i -> i-1)
-  runBC' c e ((I (max (m-n) 0)):s)
+  runBC' c e (I (max (m-n) 0):s)
 
 runBC' (ACCESS:i:c) e s = do
   opBC
@@ -386,7 +383,7 @@ runBC' (ACCESS:i:c) e s = do
 runBC' (CALL:c) e (v:(Fun e' c'):s) = do
   opBC
   changeStack (\n -> n-1)
-  runBC' c' (v:e') ((RA e c):s)
+  runBC' c' (v:e') (RA e c:s)
 
 runBC' (TAILCALL:c) e (v:(Fun e' c'):s) = do
   opBC
@@ -397,7 +394,7 @@ runBC' (FUNCTION:l:c) e s = do
   opBC
   countClos
   changeStack (+1)
-  runBC' c' e ((Fun e cf):s)
+  runBC' c' e (Fun e cf:s)
   where c' = drop l c
         cf = take l c
 
@@ -418,7 +415,7 @@ runBC' (DROP:c) (v:e) s = do
 runBC' (PRINTN:c) e ((I n):s) = do
   opBC
   printFD4 (show n)
-  runBC' c e ((I n):s)
+  runBC' c e (I n:s)
 
 runBC' (PRINT:c) e s = do
   opBC
@@ -431,13 +428,13 @@ runBC' (PRINT:c) e s = do
 runBC' (FIX:c) e ((Fun e' c'):s) = do
   opBC
   countClos
-  let efix = (Fun efix c'):e'
-  runBC' c e ((Fun efix c'):s)
+  let efix = Fun efix c':e'
+  runBC' c e (Fun efix c':s)
 
 runBC' (CJUMP:n:c) e ((I z) : s) = do
   opBC
   changeStack (\i -> i-1)
-  if z == 0 
+  if z == 0
     then runBC' c e s
     else runBC' (drop n c) e s
 

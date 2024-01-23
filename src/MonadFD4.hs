@@ -104,7 +104,7 @@ getSynonyms :: MonadFD4 m => m [(Name,Ty)]
 getSynonyms = gets synonyms
 
 addSynonym :: MonadFD4 m => Name -> Ty -> m ()
-addSynonym n ty = modify (\s -> s { synonyms = ((n,ty):(synonyms s)) })
+addSynonym n ty = modify (\s -> s { synonyms = (n,ty):synonyms s })
 
 printFD4 :: MonadFD4 m => String -> m ()
 printFD4 = liftIO . putStrLn
@@ -164,7 +164,7 @@ updateGlbDecls ds = modify (\s -> s {glb = ds, cantDecl = length ds})
 updateDecl :: MonadFD4 m => Name -> TTerm -> m ()
 updateDecl name t = modify (\s -> s {glb = replace (glb s) name t })
   where replace [] name t = []
-        replace (d@(Decl i r n ty _):ds) name t | name == n = ((Decl i r n ty t):ds)
+        replace (d@(Decl i r n ty _):ds) name t | name == n = Decl i r n ty t:ds
         replace (d@(Decl i r n ty _):ds) name t | otherwise = d: replace ds name t
 
 ----

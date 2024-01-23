@@ -48,7 +48,7 @@ compareTypes (NatTy _) (NatTy _) = True
 compareTypes (FunTy _ _ _) (NatTy _) = False
 compareTypes (NatTy _) (FunTy _ _ _) = False
 compareTypes (FunTy t1 t2 _) (FunTy t3 t4 _) =
-  (compareTypes t1 t3) && (compareTypes t2 t4)
+  compareTypes t1 t3 && compareTypes t2 t4
 
 instance Eq Ty where
   t1 == t2 = compareTypes t1 t2

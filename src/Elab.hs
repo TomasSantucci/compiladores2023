@@ -175,7 +175,7 @@ elabDecl (SDecl p f rty [(x,xty)] True t) = do
 elabDecl (SDecl p f rty ((x,xty):bs) True t) = do
   fty <- getFunType p (map snd ((x,xty):bs)) rty
   sfty <- getFunSType (map snd ((x,xty):bs)) rty
-  let t1 = (SLam p bs t)
+  let t1 = SLam p bs t
   t2 <- elab (SFix p (f,sfty) [(x,xty)] t1)
   return $ Just $ Decl p (Just 3) f fty t2
 

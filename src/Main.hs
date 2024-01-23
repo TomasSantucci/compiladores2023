@@ -157,7 +157,7 @@ compileCEK f = do
     mapM_ evalAndUpdate (glb s2)
     prof <- getProf
     s3 <- get
-    when prof $ printFD4 $ "Maquina CEK ejectuto en " ++ (show (stepsCEK s3)) ++ " pasos"
+    when prof $ printFD4 $ "Maquina CEK ejectuto en " ++ show (stepsCEK s3) ++ " pasos"
   where
     evalAndUpdate (Decl _ _ name _ body) = do t' <- evalCEK body
                                               updateDecl name t'
@@ -216,9 +216,9 @@ runVMFile f = do
     prof <- getProf
     s <- get
     when prof $ printBCStats s
-  where printBCStats s = do printFD4 $ "Operaciones ejecutadas: " ++ (show (opsBC s))
-                            printFD4 $ "Tamano maximo del stack: " ++ (show (maxStackSize s))
-                            printFD4 $ "Cantidad de clausuras creadas: " ++ (show (clos s))
+  where printBCStats s = do printFD4 $ "Operaciones ejecutadas: " ++ show (opsBC s)
+                            printFD4 $ "Tamano maximo del stack: " ++ show (maxStackSize s)
+                            printFD4 $ "Cantidad de clausuras creadas: " ++ show (clos s)
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
@@ -296,7 +296,7 @@ interpretCommand x
              []  ->  do  putStrLn ("Comando desconocido `" ++ cmd ++ "'. Escriba :? para recibir ayuda.")
                          return Noop
              [Cmd _ _ f _]
-                 ->  do  return (f t)
+                 ->  return (f t)
              _   ->  do  putStrLn ("Comando ambigüo, podría ser " ++
                                    intercalate ", " ([ head cs | Cmd cs _ _ _ <- matching ]) ++ ".")
                          return Noop
