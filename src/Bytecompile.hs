@@ -370,12 +370,12 @@ runBC' (CONST:n:c) e s = do
 
 runBC' (ADD:c) e ((I n):(I m):s) = do
   opBC
-  changeStack (\n -> n-1)
+  changeStack (\i -> i-1)
   runBC' c e ((I (n+m)):s)
 
 runBC' (SUB:c) e ((I n):(I m):s) = do
   opBC
-  changeStack (\n -> n-1)
+  changeStack (\i -> i-1)
   runBC' c e ((I (max (m-n) 0)):s)
 
 runBC' (ACCESS:i:c) e s = do
@@ -436,7 +436,7 @@ runBC' (FIX:c) e ((Fun e' c'):s) = do
 
 runBC' (CJUMP:n:c) e ((I z) : s) = do
   opBC
-  changeStack (\n -> n-1)
+  changeStack (\i -> i-1)
   if z == 0 
     then runBC' c e s
     else runBC' (drop n c) e s

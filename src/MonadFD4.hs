@@ -161,6 +161,7 @@ catchErrors c = catchError (Just <$> c)
 updateGlbDecls :: MonadFD4 m => [Decl TTerm] -> m ()
 updateGlbDecls ds = modify (\s -> s {glb = ds, cantDecl = length ds})
 
+updateDecl :: MonadFD4 m => Name -> TTerm -> m ()
 updateDecl name t = modify (\s -> s {glb = replace (glb s) name t })
   where replace [] name t = []
         replace (d@(Decl i r n ty _):ds) name t | name == n = ((Decl i r n ty t):ds)
