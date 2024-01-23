@@ -6,46 +6,65 @@ import MonadFD4
 import Lang
 import Subst
 import Data.List (find)
+import Control.Monad.Writer
 
 optimization :: MonadFD4 m => Int -> Module ->  m ()
 optimization 0 d = return ()
 optimization n d = go d (analizeModule d) n
   where
-    go :: MonadFD4 m => Module -> [Int] -> Int -> m ()
-    go decl len 0 = updateGlbDecls decl
-    go decl len i = do d' <- moduleOptimization decl len
-                       go d' len (i-1)
+    go :: MonadFD4 m => Module -> ([Int],[Name]) -> Int -> m ()
+    go decl info 0 = updateGlbDecls decl
+    go decl info i = do d' <- uncurry (moduleOptimization decl) info
+                        go d' info (i-1)
 
-analizeModule :: Module -> [Int]
-analizeModule = map (analizeTerm . declBody)
+analizeModule :: Module -> ([Int],[Name])
+analizeModule m = runWriter $ mapM (countNodes . declBody) m
 
-analizeTerm :: TTerm -> Int
-analizeTerm (V i (Global n)) = 1
-analizeTerm (V _ _) = 1
-analizeTerm (Const _ _) = 1
-analizeTerm (Lam _ _ _ (Sc1 t)) = analizeTerm t + 1
+countNodes :: TTerm -> Writer [Name] Int
+countNodes (V _ (Global n)) = do
+  tell [n]
+  return 1
 
-analizeTerm (App i t1 t2) =
-    analizeTerm t1 + analizeTerm t2 + 1
+countNodes (V _ _) = return 1
 
-analizeTerm (Print i s t) =
-    analizeTerm t + 1
+countNodes (Const _ _) = return 1
 
-analizeTerm (BinaryOp i op t1 t2) =
-    analizeTerm t1 + analizeTerm t2 + 1
+countNodes (Lam _ _ _ (Sc1 t)) = do
+  nodes <- countNodes t
+  return (nodes + 1)
 
-analizeTerm (Fix i f fty x xty (Sc2 t)) =
-    analizeTerm t + 1
+countNodes (App _ t1 t2) = do
+  nodes1 <- countNodes t1
+  nodes2 <- countNodes t2
+  return (nodes1 + nodes2 + 1)
 
-analizeTerm (IfZ i t1 t2 t3) =
-    analizeTerm t1 + analizeTerm t2 + analizeTerm t3 + 1
+countNodes (Print _ _ t) = do
+  nodes <- countNodes t
+  return (nodes + 1)
 
-analizeTerm (Let i x xty def (Sc1 body)) =
-    analizeTerm def + analizeTerm body + 1
+countNodes (BinaryOp _ _ t1 t2) = do
+  nodes1 <- countNodes t1
+  nodes2 <- countNodes t2
+  return (nodes1 + nodes2 + 1)
 
-moduleOptimization :: MonadFD4 m => Module -> [Int] -> m Module
-moduleOptimization ts lens = do
-    decls1 <- inline ts lens
+countNodes (Fix _ _ _ _ _ (Sc2 t)) = do
+  nodes <- countNodes t
+  return (nodes + 1)
+
+countNodes (IfZ _ t1 t2 t3) = do
+  nodes1 <- countNodes t1
+  nodes2 <- countNodes t2
+  nodes3 <- countNodes t3
+  return (nodes1 + nodes2 + nodes3 + 1)
+
+countNodes (Let _ x _ def (Sc1 body)) = do
+  nodesDef <- countNodes def
+  nodesBody <- countNodes body
+  return (nodesDef + nodesBody + 1)
+
+moduleOptimization :: MonadFD4 m => Module -> [Int] -> [Name] -> m Module
+moduleOptimization ts depths glbs = do
+    decls1 <- inline ts depths glbs
     decls2 <- deadCodeElim decls1
     decls3 <- mapM constFoldingProp decls2
     return decls3
@@ -134,23 +153,28 @@ deadCodeElim :: MonadFD4 m => Module -> m Module
 deadCodeElim [] = return []
 deadCodeElim [t] = return [t]
 deadCodeElim (t@(Decl _ _ n _ tt):ts) = do
+    ts' <- deadCodeElim ts
     let occursLater = any (globalVarSearch n . declBody) ts
     if occursLater || hasPrint tt
-        then do ts' <- deadCodeElim ts
-                return $ t : ts'
-        else deadCodeElim ts
+      then return (t:ts')
+      else return ts'
 
-inline :: MonadFD4 m => Module -> [Int] -> m Module
-inline m = go m []
+checkHeuristic :: Int -> Name -> [Name] -> Bool
+checkHeuristic depth name glbs =
+    depth < 15 || length (filter (name==) glbs) == 1
+
+inline :: MonadFD4 m => Module -> [Int] -> [Name] -> m Module
+inline m depths glbs = go m [] depths
   where go :: MonadFD4 m => Module -> Module -> [Int] -> m Module
         go [] _ _ = return []
-        go ((Decl p r name ty body) : ds) shrtDecls (l:ls) = do
-            body' <- inlineTerm shrtDecls body
+        go ((Decl p r name ty body):decs) inlineCandidates (d:ds) = do
+            body' <- inlineTerm inlineCandidates body
             let dec = Decl p r name ty body'
-            let isshort = l < 20
-            let shrtDecls' = if l < 20 then dec:shrtDecls else shrtDecls
-            ds' <- go ds shrtDecls' ls
-            return $ dec : ds'
+                inlineCandidates' = if checkHeuristic d name glbs
+                                    then dec : inlineCandidates
+                                    else inlineCandidates
+            decs' <- go decs inlineCandidates' ds
+            return $ dec : decs'
         go _ _ _ = failFD4 "Error de inline."
 
 inlineTerm :: MonadFD4 m => Module -> TTerm -> m TTerm -- TODO: acomodar info en terminos
