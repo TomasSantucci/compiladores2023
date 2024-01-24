@@ -112,8 +112,7 @@ openAll gp ns (App p t u) = SApp (gp p) (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Fix p f fty x xty t) =
   let
     x' = freshen ns x
-    f' = freshen (x':ns) f
-  in SFix (gp p) (f',resugarTy fty) [(x',resugarTy xty)] (openAll gp (x:f:ns) (open2 f' x' t))
+  in SFix (gp p) (f,resugarTy fty) [(x',resugarTy xty)] (openAll gp (x:f:ns) (open2 f x' t))
 openAll gp ns (IfZ p c t e) = SIfZ (gp p) (openAll gp ns c) (openAll gp ns t) (openAll gp ns e)
 openAll gp ns (Print p str t) = SPrint (gp p) str (openAll gp ns t)
 openAll gp ns (BinaryOp p op t u) = SBinaryOp (gp p) op (openAll gp ns t) (openAll gp ns u)
