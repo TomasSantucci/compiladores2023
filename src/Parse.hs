@@ -78,8 +78,8 @@ var :: P Name
 var = identifier
 
 getPos :: P Pos
-getPos = do pos <- getPosition
-            return $ Pos (sourceLine pos) (sourceColumn pos)
+getPos = do p <- getPosition
+            return $ Pos (sourceLine p) (sourceColumn p)
 
 tyatom :: P STy
 tyatom = (reserved "Nat" >> return SNatTy)

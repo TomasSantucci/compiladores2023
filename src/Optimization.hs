@@ -6,104 +6,18 @@ import MonadFD4
 import Lang
 import Subst
 import Data.List (find)
-import Control.Monad.Writer
 
 optimization :: MonadFD4 m => Int -> Module ->  m ()
-optimization 0 d = return ()
-optimization n d = go d (analizeModule d) n
-  where
-    go :: MonadFD4 m => Module -> ([Int],[Name]) -> Int -> m ()
-    go decl info 0 = updateGlbDecls decl
-    go decl info i = do d' <- uncurry (moduleOptimization decl) info
-                        go d' info (i-1)
+optimization 0 m = updateGlbDecls m
+optimization n m = do
+  m' <- moduleOptimization m
+  optimization (n-1) m'
 
-analizeModule :: Module -> ([Int],[Name])
-analizeModule m = runWriter $ mapM (countNodes . declBody) m
-
-countNodes :: TTerm -> Writer [Name] Int
-countNodes (V _ (Global n)) = do
-  tell [n]
-  return 1
-
-countNodes (V _ _) = return 1
-
-countNodes (Const _ _) = return 1
-
-countNodes (Lam _ _ _ (Sc1 t)) = do
-  nodes <- countNodes t
-  return (nodes + 1)
-
-countNodes (App _ t1 t2) = do
-  nodes1 <- countNodes t1
-  nodes2 <- countNodes t2
-  return (nodes1 + nodes2 + 1)
-
-countNodes (Print _ _ t) = do
-  nodes <- countNodes t
-  return (nodes + 1)
-
-countNodes (BinaryOp _ _ t1 t2) = do
-  nodes1 <- countNodes t1
-  nodes2 <- countNodes t2
-  return (nodes1 + nodes2 + 1)
-
-countNodes (Fix _ _ _ _ _ (Sc2 t)) = do
-  nodes <- countNodes t
-  return (nodes + 1)
-
-countNodes (IfZ _ t1 t2 t3) = do
-  nodes1 <- countNodes t1
-  nodes2 <- countNodes t2
-  nodes3 <- countNodes t3
-  return (nodes1 + nodes2 + nodes3 + 1)
-
-countNodes (Let _ x _ def (Sc1 body)) = do
-  nodesDef <- countNodes def
-  nodesBody <- countNodes body
-  return (nodesDef + nodesBody + 1)
-
-moduleOptimization :: MonadFD4 m => Module -> [Int] -> [Name] -> m Module
-moduleOptimization ts depths glbs = do
-    decls1 <- inline ts depths glbs
-    decls2 <- deadCodeElim decls1
-    decls3 <- mapM constFoldingProp decls2
-    return decls3
-
-constFoldingProp :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
-constFoldingProp (Decl p r s ty t) = do
-    t1 <- propagation t
-    t2 <- constFolding t1
-    return (Decl p r s ty t2)
-
-constFolding :: MonadFD4 m => TTerm -> m TTerm
-constFolding (BinaryOp i op t1 t2) = do
-    t1' <- constFolding t1
-    t2' <- constFolding t2
-    case (t1' ,t2', op) of
-        (_,Const _ (CNat 0),_) -> return t1'
-        (Const _ (CNat 0),_,Add) -> return t2'
-        (Const _ (CNat 0),_,Sub) -> return t1'
-        (Const _ (CNat n),Const _ (CNat m) ,_ ) -> return (Const i (CNat (semOp op n m)))
-        _ -> return (BinaryOp i op t1' t2')
-constFolding (IfZ i t1 t2 t3) = do
-    t1' <- constFolding t1
-    t2' <- constFolding t2
-    t3' <- constFolding t3
-    case t1' of
-        (Const _ (CNat 0)) -> return t2'
-        (Const _ _) -> return t3'
-        _ -> return (IfZ i t1' t2' t3')
-
-constFolding t = applyRec t constFolding
-
-propagation::MonadFD4 m => TTerm -> m TTerm
-propagation (Let i n ty t1 (Sc1 t2)) = do
-    t1' <- propagation t1
-    t2' <- propagation t2
-    case t1' of
-        (Const _ (CNat m)) -> return (subst t1' (Sc1 t2'))
-        _ -> return (Let i n ty t1' (Sc1 t2'))
-propagation t = applyRec t propagation
+moduleOptimization :: MonadFD4 m => Module -> m Module
+moduleOptimization m = do
+  decls1 <- inline m
+  decls2 <- dceDec decls1
+  mapM constFoldingProp decls2
 
 applyRec :: MonadFD4 m => TTerm -> (TTerm -> m TTerm) -> m TTerm
 applyRec t f = case t of
@@ -117,6 +31,42 @@ applyRec t f = case t of
     IfZ i t1 t2 t3 -> IfZ i <$> f t1 <*> f t2 <*> f t3
     Let i n ty t1 (Sc1 t2) -> Let i n ty <$> f t1 <*> (Sc1 <$> f t2)
 
+constFoldingProp :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
+constFoldingProp (Decl p r s ty t) = do
+  t1 <- propagation t
+  t2 <- constFolding t1
+  return (Decl p r s ty t2)
+
+constFolding :: MonadFD4 m => TTerm -> m TTerm
+constFolding (BinaryOp i op t1 t2) = do
+  t1' <- constFolding t1
+  t2' <- constFolding t2
+  case (t1' ,t2', op) of
+      (_,Const _ (CNat 0),_) -> return t1'
+      (Const _ (CNat 0),_,Add) -> return t2'
+      (Const _ (CNat 0),_,Sub) -> return t1'
+      (Const _ (CNat n),Const _ (CNat m) ,_ ) -> return (Const i (CNat (semOp op n m)))
+      _ -> return (BinaryOp i op t1' t2')
+constFolding (IfZ i t1 t2 t3) = do
+  t1' <- constFolding t1
+  t2' <- constFolding t2
+  t3' <- constFolding t3
+  case t1' of
+      (Const _ (CNat 0)) -> return t2'
+      (Const _ _) -> return t3'
+      _ -> return (IfZ i t1' t2' t3')
+
+constFolding t = applyRec t constFolding
+
+propagation::MonadFD4 m => TTerm -> m TTerm
+propagation (Let i n ty t1 (Sc1 t2)) = do
+  t1' <- propagation t1
+  t2' <- propagation t2
+  case t1' of
+      (Const _ (CNat m)) -> return (subst t1' (Sc1 t2'))
+      _ -> return (Let i n ty t1' (Sc1 t2'))
+propagation t = applyRec t propagation
+
 hasPrint :: TTerm -> Bool
 hasPrint (Print {}) = True
 hasPrint (BinaryOp _ _ t1 t2) = hasPrint t1 || hasPrint t2
@@ -125,35 +75,85 @@ hasPrint (Let _ _ _ def (Sc1 body)) = hasPrint def || hasPrint body
 hasPrint (App _ t1 t2) = hasPrint t1 || hasPrint t2
 hasPrint _ = False
 
-deadCodeElim :: MonadFD4 m => Module -> m Module
-deadCodeElim [] = return []
-deadCodeElim [t] = return [t]
-deadCodeElim (t@(Decl _ _ n _ tt):ts) = do
-    ts' <- deadCodeElim ts
-    let occursLater = any (globalVarSearch n . declBody) ts
-    if occursLater || hasPrint tt
-      then return (t:ts')
-      else return ts'
+isVarUsed :: TTerm -> Bool
+isVarUsed tt = go tt 0
+  where go :: TTerm -> Int -> Bool
+        go (V _ (Bound i)) d = i == d
+        go (V _ _) d = False
+        go (Const _ _) d = False
+        go (Lam _ _ ty (Sc1 t)) d = go t (d+1)
+        go (App _ t1 t2) d = go t1 d || go t2 d
+        go (Print _ _ t) d = go t d
+        go (BinaryOp _ _ t1 t2) d = go t1 d || go t2 d
+        go (Fix _ _ _ _ _ (Sc2 t)) d = go t (d+2)
+        go (IfZ _ t1 t2 t3) d = go t1 d || go t2 d || go t3 d
+        go (Let _ _ _ t1 (Sc1 t2)) d = go t1 d || go t2 (d+1)
 
-checkHeuristic :: Int -> Name -> [Name] -> Bool
-checkHeuristic depth name glbs =
-    depth < 15 || length (filter (name==) glbs) == 1
+dceTerm :: TTerm -> TTerm
+dceTerm (V p var) = V p var
 
-inline :: MonadFD4 m => Module -> [Int] -> [Name] -> m Module
-inline m depths glbs = go m [] depths
-  where go :: MonadFD4 m => Module -> Module -> [Int] -> m Module
-        go [] _ _ = return []
-        go ((Decl p r name ty body):decs) inlineCandidates (d:ds) = do
-            body' <- inlineTerm inlineCandidates body
-            let dec = Decl p r name ty body'
-                inlineCandidates' = if checkHeuristic d name glbs
-                                    then dec : inlineCandidates
+dceTerm (Const p n) = Const p n
+
+dceTerm (Lam p x xty (Sc1 body)) =
+  Lam p x xty (Sc1 (dceTerm body))
+
+dceTerm (App p t1 t2) =
+  App p (dceTerm t1) (dceTerm t2)
+
+dceTerm (Print p s t) =
+  Print p s (dceTerm t)
+
+dceTerm (BinaryOp p op t1 t2) =
+  BinaryOp p op (dceTerm t1) (dceTerm t2)
+
+dceTerm (Fix p f fty x xty (Sc2 t)) =
+  Fix p f fty x xty (Sc2 (dceTerm t))
+
+dceTerm (IfZ p cond t1 t2) =
+  IfZ p (dceTerm cond) (dceTerm t1) (dceTerm t2)
+
+dceTerm t@(Let p x xty def (Sc1 body)) =
+  let body' = dceTerm body
+  in if isVarUsed body' || hasPrint def
+     then Let p x xty (dceTerm def) (Sc1 body')
+     else body'
+
+dceDec :: MonadFD4 m => Module -> m Module
+dceDec [] = return []
+dceDec (dec:decs) = do
+  decs' <- dceDec decs
+  let occursLater = any (globalVarSearch (declName dec) . declBody) decs'
+      dec' = dceTerm <$> dec
+  if occursLater || hasPrint (declBody dec)
+    then return (dec':decs')
+    else return decs'
+
+countNodes :: TTerm -> Int
+countNodes (V _ (Global n)) = 1
+countNodes (V _ _) = 1
+countNodes (Const _ _) = 1
+countNodes (Lam _ _ _ (Sc1 t)) = 1 + countNodes t
+countNodes (App _ t1 t2) = countNodes t1 + countNodes t2 + 1
+countNodes (Print _ _ t) = countNodes t + 1
+countNodes (BinaryOp _ _ t1 t2) = countNodes t1 + countNodes t2 + 1
+countNodes (Fix _ _ _ _ _ (Sc2 t)) = 1 + countNodes t
+countNodes (IfZ _ t1 t2 t3) = countNodes t1 + countNodes t2 + countNodes t3 + 1
+countNodes (Let _ x _ def (Sc1 body)) = countNodes def + countNodes body + 1
+
+inline :: MonadFD4 m => Module -> m Module
+inline m = go m []
+  where go :: MonadFD4 m => Module -> [Decl TTerm] -> m Module
+        go [] _ = return []
+        go (dec:decs) inlineCandidates = do
+            body' <- inlineTerm inlineCandidates (declBody dec)
+            let dec' = dec {declBody = body'}
+                inlineCandidates' = if countNodes body' < 15
+                                    then dec' : inlineCandidates
                                     else inlineCandidates
-            decs' <- go decs inlineCandidates' ds
-            return $ dec : decs'
-        go _ _ _ = failFD4 "Error de inline."
+            decs' <- go decs inlineCandidates'
+            return $ dec' : decs'
 
-inlineTerm :: MonadFD4 m => Module -> TTerm -> m TTerm -- TODO: acomodar info en terminos
+inlineTerm :: MonadFD4 m => Module -> TTerm -> m TTerm 
 inlineTerm [] t = return t
 
 inlineTerm decs t@(App _ (V _ (Global n)) t1@(Const ty (CNat m))) = do
@@ -180,4 +180,4 @@ inlineTerm decs t@(V _ (Global n)) =
         Just (Decl _ _ _ _ t') -> return t'
         Nothing -> return t
 
-inlineTerm decs t = applyRec t (inlineTerm decs) --TODO chequar terminos abiertos
+inlineTerm decs t = applyRec t (inlineTerm decs)
