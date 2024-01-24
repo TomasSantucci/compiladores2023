@@ -1,0 +1,1 @@
+let r:Nat = (fun (x:Nat) -> print "x=" x) 1

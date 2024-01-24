@@ -72,7 +72,8 @@ hasPrint (Print {}) = True
 hasPrint (BinaryOp _ _ t1 t2) = hasPrint t1 || hasPrint t2
 hasPrint (IfZ _ c t e) = hasPrint c || hasPrint t || hasPrint e
 hasPrint (Let _ _ _ def (Sc1 body)) = hasPrint def || hasPrint body
-hasPrint (App _ t1 t2) = hasPrint t1 || hasPrint t2
+hasPrint (App _ (Lam _ _ _ (Sc1 t1)) t2) = hasPrint t1 || hasPrint t2
+hasPrint (App _ (Fix _ _ _ _ _ (Sc2 t1)) t2) = hasPrint t1 || hasPrint t2
 hasPrint _ = False
 
 isVarUsed :: TTerm -> Bool
@@ -124,7 +125,7 @@ dceDec (dec:decs) = do
   decs' <- dceDec decs
   let occursLater = any (globalVarSearch (declName dec) . declBody) decs'
       dec' = dceTerm <$> dec
-  if occursLater || hasPrint (declBody dec)
+  if occursLater || hasPrint (declBody dec')
     then return (dec':decs')
     else return decs'
 
