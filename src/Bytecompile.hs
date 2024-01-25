@@ -214,6 +214,7 @@ bcc2 (Let _ _ _ def (Sc1 body)) = do
 bcc2 t = bcc t
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
+bytecompileModule [] = return [STOP]
 bytecompileModule m = do
   t <- module2term m
   bc <- bcc2 t
