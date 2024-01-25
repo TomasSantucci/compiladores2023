@@ -58,13 +58,14 @@ constFolding (IfZ i t1 t2 t3) = do
 
 constFolding t = applyRec t constFolding
 
-propagation::MonadFD4 m => TTerm -> m TTerm
-propagation (Let i n ty t1 (Sc1 t2)) = do
-  t1' <- propagation t1
-  t2' <- propagation t2
-  case t1' of
-      (Const _ (CNat m)) -> return (subst t1' (Sc1 t2'))
-      _ -> return (Let i n ty t1' (Sc1 t2'))
+propagation :: MonadFD4 m => TTerm -> m TTerm
+propagation (Let i n ty def sc@(Sc1 body)) = do
+  def' <- propagation def
+  case def' of
+    Const {} -> propagation $ subst def' sc
+    _ -> do body' <- propagation body
+            return $ Let i n ty def' (Sc1 body')
+
 propagation t = applyRec t propagation
 
 hasPrint :: TTerm -> Bool

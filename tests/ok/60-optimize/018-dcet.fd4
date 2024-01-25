@@ -1,0 +1,7 @@
+let r:Nat =
+    let x : Nat = 2 in
+        let y : Nat = 1 in
+        let z : Nat = 0 in
+        y+z
+
+let res : Nat = print "res=" r
