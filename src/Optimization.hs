@@ -20,16 +20,40 @@ moduleOptimization m = do
   mapM constFoldingProp decls2
 
 applyRec :: MonadFD4 m => TTerm -> (TTerm -> m TTerm) -> m TTerm
-applyRec t f = case t of
-    Const{} -> return t
-    V{} -> return t
-    Lam i n ty (Sc1 t') -> Lam i n ty . Sc1 <$> f t'
-    App i t1 t2 -> App i <$> f t1 <*> f t2
-    Print i s t' -> Print i s <$> f t'
-    Fix i n nty m mty (Sc2 t') -> Fix i n nty m mty . Sc2 <$> f t'
-    BinaryOp i op t1 t2 -> BinaryOp i op <$> f t1 <*> f t2
-    IfZ i t1 t2 t3 -> IfZ i <$> f t1 <*> f t2 <*> f t3
-    Let i n ty t1 (Sc1 t2) -> Let i n ty <$> f t1 <*> (Sc1 <$> f t2)
+applyRec t@(Const {}) f = return t
+applyRec t@(V {}) f = return t
+applyRec (Lam i n ty sc) f = do
+    t' <- f $ open n sc
+    return $ Lam i n ty $ close n t'
+
+applyRec (App i t1 t2) f = do
+    t1' <- f t1
+    t2' <- f t2
+    return $ App i t1' t2'
+
+applyRec (Print i s t) f= do
+    t' <- f t
+    return $ Print i s t'
+
+applyRec (Fix i n nty m mty sc) f= do
+    t' <- f $ open2 n m sc
+    return $ Fix i n nty m mty $ close2 n m t'
+
+applyRec (BinaryOp i op t1 t2) f = do
+    t1' <- f t1
+    t2' <- f t2
+    return $ BinaryOp i op t1' t2'
+
+applyRec (IfZ i t1 t2 t3) f = do
+    t1' <- f t1
+    t2' <- f t2
+    t3' <- f t3
+    return $ IfZ i t1' t2' t3'
+
+applyRec (Let i n ty t1 sc) f = do
+    t1' <- f t1
+    t2' <- f $ open n sc
+    return $ Let i n ty t1' $ close n t2'
 
 constFoldingProp :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
 constFoldingProp (Decl p r s ty t) = do
@@ -168,9 +192,8 @@ inlineTerm decs t@(App _ (V _ (Global n)) t1@(Const ty (CNat m))) = do
 inlineTerm decs t@(App i (V p (Global n)) t1) = do
     case find (\d -> declName d == n) decs of
         Just (Decl _ _ _ _ (Lam _ x _ sc)) -> do
-            let tzTy = (snd . getInfo) t1
             t1' <- inlineTerm decs t1
-            return $ Let i x tzTy t1' sc
+            return $ Let i x (getTy t1) t1' sc
         Just (Decl _ _ _ _ (Fix {})) -> do
             t1' <- inlineTerm decs t1
             return $ App i (V p (Global n)) t1'

@@ -1,0 +1,3 @@
+let f:Nat->Nat = fun (x:Nat) -> (let y:Nat = 2 in x+y)
+
+let r:Nat = print "x=" (f 1)
