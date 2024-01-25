@@ -1,0 +1,1 @@
+let r:Nat = let x:Nat = (let y:Nat = 2 in print "y=" y) in print "x=" 0

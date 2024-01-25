@@ -1,0 +1,1 @@
+let r:Nat->Nat = (fun (x y:Nat) -> print "x=" x) 1
