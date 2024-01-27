@@ -83,12 +83,12 @@ constFolding (IfZ i t1 t2 t3) = do
 constFolding t = applyRec t constFolding
 
 propagation :: MonadFD4 m => TTerm -> m TTerm
-propagation (Let i n ty def sc@(Sc1 body)) = do
+propagation (Let i n ty def sc) = do
   def' <- propagation def
   case def' of
     Const {} -> propagation $ subst def' sc
-    _ -> do body' <- propagation body
-            return $ Let i n ty def' (Sc1 body')
+    _ -> do body' <- propagation $ open n sc
+            return $ Let i n ty def' $ close n body'
 
 propagation t = applyRec t propagation
 

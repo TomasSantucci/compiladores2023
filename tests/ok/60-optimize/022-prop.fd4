@@ -1,0 +1,8 @@
+let num:Nat = 6
+
+let r:Nat =
+    let x : Nat = num in
+    let y : Nat = 1 in
+    x+y
+
+let res : Nat = print "res=" r
