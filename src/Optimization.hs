@@ -102,55 +102,37 @@ hasPrint (App _ (Fix _ _ _ _ _ (Sc2 t1)) t2) = hasPrint t1 || hasPrint t2
 hasPrint _ = False
 
 isVarUsed :: TTerm -> Bool
-isVarUsed tt = go tt 0
-  where go :: TTerm -> Int -> Bool
-        go (V _ (Bound i)) d = i == d
-        go (V _ _) d = False
-        go (Const _ _) d = False
-        go (Lam _ _ ty (Sc1 t)) d = go t (d+1)
-        go (App _ t1 t2) d = go t1 d || go t2 d
-        go (Print _ _ t) d = go t d
-        go (BinaryOp _ _ t1 t2) d = go t1 d || go t2 d
-        go (Fix _ _ _ _ _ (Sc2 t)) d = go t (d+2)
-        go (IfZ _ t1 t2 t3) d = go t1 d || go t2 d || go t3 d
-        go (Let _ _ _ t1 (Sc1 t2)) d = go t1 d || go t2 (d+1)
+isVarUsed tt = go tt 0 where
+  go :: TTerm -> Int -> Bool
+  go (V _ (Bound i)) d = i == d
+  go (V _ _) d = False
+  go (Const _ _) d = False
+  go (Lam _ _ ty (Sc1 t)) d = go t (d+1)
+  go (App _ t1 t2) d = go t1 d || go t2 d
+  go (Print _ _ t) d = go t d
+  go (BinaryOp _ _ t1 t2) d = go t1 d || go t2 d
+  go (Fix _ _ _ _ _ (Sc2 t)) d = go t (d+2)
+  go (IfZ _ t1 t2 t3) d = go t1 d || go t2 d || go t3 d
+  go (Let _ _ _ t1 (Sc1 t2)) d = go t1 d || go t2 (d+1)
 
-dceTerm :: TTerm -> TTerm
-dceTerm (V p var) = V p var
+dceTerm :: MonadFD4 m => TTerm -> m TTerm
+dceTerm t@(Let p x xty def (Sc1 body)) = do
+  body' <- dceTerm body
+  def' <- dceTerm def
+  if isVarUsed body' || hasPrint def
+    then return $ Let p x xty def' (Sc1 body')
+    else return body'
 
-dceTerm (Const p n) = Const p n
-
-dceTerm (Lam p x xty (Sc1 body)) =
-  Lam p x xty (Sc1 (dceTerm body))
-
-dceTerm (App p t1 t2) =
-  App p (dceTerm t1) (dceTerm t2)
-
-dceTerm (Print p s t) =
-  Print p s (dceTerm t)
-
-dceTerm (BinaryOp p op t1 t2) =
-  BinaryOp p op (dceTerm t1) (dceTerm t2)
-
-dceTerm (Fix p f fty x xty (Sc2 t)) =
-  Fix p f fty x xty (Sc2 (dceTerm t))
-
-dceTerm (IfZ p cond t1 t2) =
-  IfZ p (dceTerm cond) (dceTerm t1) (dceTerm t2)
-
-dceTerm t@(Let p x xty def (Sc1 body)) =
-  let body' = dceTerm body
-  in if isVarUsed body' || hasPrint def
-     then Let p x xty (dceTerm def) (Sc1 body')
-     else body'
+dceTerm t = applyRec t dceTerm
 
 dceDec :: MonadFD4 m => Module -> m Module
 dceDec [] = return []
 dceDec (dec:decs) = do
   decs' <- dceDec decs
+  body' <- dceTerm $ declBody dec
   let occursLater = any (globalVarSearch (declName dec) . declBody) decs'
-      dec' = dceTerm <$> dec
-  if occursLater || hasPrint (declBody dec')
+      dec' = dec {declBody = body'}
+  if occursLater || hasPrint body'
     then return (dec':decs')
     else return decs'
 
