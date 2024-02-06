@@ -43,7 +43,6 @@ elab' env (SLam p ((v,ty):bs) t) = do
   ty' <- elabTy p ty
   return $ Lam (Info p (Just 2)) v ty' (close v t')
 
--- falta caso error sin argumentos? TODO
 elab' env (SFix p (f,fty) [(x,xty)] t) = do
   t' <- elab' (x:f:env) t
   fty' <- elabTy p fty
@@ -92,8 +91,8 @@ elab' env (SLet parens False p (v,vty) (b:bs) def body) = do
   def' <- elab' env (SLam p (b:bs) def)
   vty' <- getFunType p (map snd (b:bs)) vty
   body' <- elab' (v:env) body
-  let rule = if null bs then Just 1 else Just 4 -- TODO creo que la regla 1 y la 4 son la misma, y no importa si es una u otra
-  return $ Let (Info p rule) v vty' def' (close v body') --CHEAQUEAR LA POSICION TODO
+  let rule = if null bs then Just 1 else Just 4
+  return $ Let (Info p rule) v vty' def' (close v body')
 
 elab' env (SLet parens True p (v,vty) [(x,xty)] def body) =do
   vty' <- getFunType p [xty] vty
@@ -111,7 +110,7 @@ elab' env (SLet parens True p (f,rty) ((x,xty):bs) def body) = do
   body' <- elab' (f:env) body
   return $ Let (Info p (Just 6)) f fty def2 (close f body')
 
-elab' env t =
+elab' _ _ =
   failFD4 "Patrón no reconocido para elab."
 
 

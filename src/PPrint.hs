@@ -19,7 +19,7 @@ module PPrint (
 
 import Lang
 import Subst ( open, open2, freshen )
-import Common ( Pos )
+import Common ( Pos, abort )
 
 import Data.Text ( unpack )
 import Prettyprinter.Render.Terminal
@@ -85,7 +85,7 @@ resugar (SLet _ _ (p, Just 6) (f, fty) [] def body) =
   let SFix _ _ bs (SLam _ bs' def') = resugar def
   in SLet True True p (f, getReturnSTy fty (length bs + 1)) (bs ++ bs') def' (resugar body)
 
-resugar _ = undefined
+resugar _ = abort "caso no reconocido para hacer resugar"
 
 
 -- Retorna el tipo obtenido al aplicar sus primeros n argumentos
