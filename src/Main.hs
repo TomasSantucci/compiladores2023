@@ -78,39 +78,26 @@ main = execParser opts >>= go
      <> header "Compilador de FD4 de la materia Compiladores 2022" )
 
     go :: (Mode,Bool,Bool,[FilePath]) -> IO ()
-    go (mode, opt, prof, files) = if prof then runProfMode mode opt files
-                                  else runDefaultMode mode opt files
-
-    runProfMode :: Mode -> Bool -> [FilePath] -> IO ()
-    runProfMode Bytecompile opt files = runOrFailProf (Conf opt Bytecompile True) (mapM_ bytecompileFile files)
-    runProfMode RunVM opt files = runOrFailProf (Conf opt RunVM True) (mapM_ runVMFile files)
-    runProfMode CEK opt files = runOrFailProf (Conf opt CEK True) $ mapM_ compileCEK files
-    runProfMode Typecheck opt files = runOrFailProf (Conf opt Typecheck True) $ mapM_ compileTypeCheck files
-    runProfMode CC opt files = runOrFailProf (Conf opt CC True) $ mapM_ compileCC files
-    runProfMode m opt files = runOrFailProf (Conf opt m True) $ mapM_ compileFile files
-
-    runDefaultMode :: Mode -> Bool -> [FilePath] -> IO ()
-    runDefaultMode InteractiveCEK opt files = runOrFail (Conf opt InteractiveCEK False) (runInputT defaultSettings (repl files))
-    runDefaultMode Interactive opt files = runOrFail (Conf opt Interactive False) (runInputT defaultSettings (repl files))
-    runDefaultMode Bytecompile opt files = runOrFail (Conf opt Bytecompile False) (mapM_ bytecompileFile files)
-    runDefaultMode RunVM opt files = runOrFail (Conf opt RunVM False) (mapM_ runVMFile files)
-    runDefaultMode CEK opt files = runOrFail (Conf opt CEK False) $ mapM_ compileCEK files
-    runDefaultMode Typecheck opt files = runOrFail (Conf opt Typecheck False) $ mapM_ compileTypeCheck files
-    runDefaultMode CC opt files = runOrFail (Conf opt CC False) $ mapM_ compileCC files
-    runDefaultMode m opt files = runOrFail (Conf opt m False) $ mapM_ compileFile files
+    go (InteractiveCEK,opt,prof,files) =
+              runOrFail (Conf opt InteractiveCEK prof) (runInputT defaultSettings (repl files))
+    go (Interactive,opt,prof,files) =
+              runOrFail (Conf opt Interactive prof) (runInputT defaultSettings (repl files))
+    go (Bytecompile,opt,prof,files) =
+              runOrFail (Conf opt Bytecompile prof) (mapM_ bytecompileFile files)
+    go (RunVM,opt,prof,files) =
+              runOrFail (Conf opt RunVM prof) (mapM_ runVMFile files)
+    go (CEK,opt,prof,files) =
+              runOrFail (Conf opt CEK prof) $ mapM_ compileCEK files
+    go (Typecheck,opt,prof,files) =
+              runOrFail (Conf opt Typecheck prof) $ mapM_ compileTypeCheck files
+    go (CC,opt,prof,files) =
+              runOrFail (Conf opt CC prof) $ mapM_ compileCC files
+    go (m,opt,prof,files) =
+              runOrFail (Conf opt m prof) $ mapM_ compileFile files
 
 runOrFail :: Conf -> FD4 a -> IO a
 runOrFail c m = do
   r <- runFD4 m c
-  case r of
-    Left err -> do
-      liftIO $ hPrint stderr err
-      exitWith (ExitFailure 1)
-    Right v -> return v
-
-runOrFailProf :: Conf -> FD4Prof a -> IO a
-runOrFailProf c m = do
-  r <- runFD4Prof m c
   case r of
     Left err -> do
       liftIO $ hPrint stderr err
@@ -212,8 +199,8 @@ bytecompileFile f = do
 runVMFile ::  MonadFD4 m => FilePath -> m ()
 runVMFile f = do
     bc <- liftIO $ bcRead f
-    runBC bc
     prof <- getProf
+    if prof then runBCProf bc else runBC bc
     s <- get
     when prof $ printBCStats s
   where printBCStats s = do printFD4 $ "Operaciones ejecutadas: " ++ show (opsBC s)

@@ -11,7 +11,7 @@ Este módulo permite compilar módulos a la Macchina. También provee
 una implementación de la Macchina para ejecutar el bytecode.
 -}
 module Bytecompile
-  (Bytecode, runBC, bcWrite, bcRead, bytecompileModule, showBC, showOps)
+  (Bytecode, runBC, runBCProf, bcWrite, bcRead, bytecompileModule, showBC, showOps)
  where
 
 import Lang
@@ -356,70 +356,50 @@ data Val = I Int | Fun Env Bytecode | RA Env Bytecode
 runBC :: MonadFD4 m => Bytecode -> m ()
 runBC bc = runBC' bc [] []
 
+runBCProf :: MonadFD4 m => Bytecode -> m ()
+runBCProf bc = runBCProf' bc [] []
+
 runBC' :: MonadFD4 m => Bytecode -> [Val] -> [Val]-> m ()
 runBC' (STOP:c) _ _ = do
-  opBC
   return ()
 
 runBC' (CONST:n:c) e s = do
-  opBC
-  changeStack (+1)
   runBC' c e (I n:s)
 
 runBC' (ADD:c) e ((I n):(I m):s) = do
-  opBC
-  changeStack (\i -> i-1)
   runBC' c e (I (n+m):s)
 
 runBC' (SUB:c) e ((I n):(I m):s) = do
-  opBC
-  changeStack (\i -> i-1)
   runBC' c e (I (max (m-n) 0):s)
 
 runBC' (ACCESS:i:c) e s = do
-  opBC
-  changeStack (+1)
   runBC' c e ((e!!i):s)
 
 runBC' (CALL:c) e (v:(Fun e' c'):s) = do
-  opBC
-  changeStack (\n -> n-1)
   runBC' c' (v:e') (RA e c:s)
 
 runBC' (TAILCALL:c) e (v:(Fun e' c'):s) = do
-  opBC
-  changeStack (\n -> n-1)
   runBC' c' (v:e') s
 
 runBC' (FUNCTION:l:c) e s = do
-  opBC
-  countClos
-  changeStack (+1)
   runBC' c' e (Fun e cf:s)
   where c' = drop l c
         cf = take l c
 
 runBC' (RETURN:_) _ (v:(RA e c):s) = do
-  opBC
-  changeStack (\n -> n-1)
   runBC' c e (v:s)
 
 runBC' (SHIFT:c) e (v:s) = do
-  opBC
-  changeStack (\n -> n-1)
   runBC' c (v:e) s
 
 runBC' (DROP:c) (v:e) s = do
-  opBC
   runBC' c e s
 
 runBC' (PRINTN:c) e ((I n):s) = do
-  opBC
   printFD4 (show n)
   runBC' c e (I n:s)
 
 runBC' (PRINT:c) e s = do
-  opBC
   let (msg,_:rest) = span (NULL /=) c
   printFD4' $ bc2string msg
   runBC' rest e s
@@ -427,20 +407,103 @@ runBC' (PRINT:c) e s = do
 -- Esta regla se ejecuta inmediatamente 
 -- despues de la regla de function por ende e y e' son el mismo 
 runBC' (FIX:c) e ((Fun e' c'):s) = do
-  opBC
-  countClos
   let efix = Fun efix c':e'
   runBC' c e (Fun efix c':s)
 
 runBC' (CJUMP:n:c) e ((I z) : s) = do
-  opBC
-  changeStack (\i -> i-1)
   if z == 0
     then runBC' c e s
     else runBC' (drop n c) e s
 
 runBC' (JUMP:n:c) e s = do
-  opBC
   runBC' (drop n c) e s
 
 runBC' c _ s = failFD4 "Error en ejecución de la Macchina."
+
+runBCProf' :: MonadFD4 m => Bytecode -> [Val] -> [Val]-> m ()
+runBCProf' (STOP:c) _ _ = do
+  opBC
+  return ()
+
+runBCProf' (CONST:n:c) e s = do
+  opBC
+  changeStack (+1)
+  runBCProf' c e (I n:s)
+
+runBCProf' (ADD:c) e ((I n):(I m):s) = do
+  opBC
+  changeStack (\i -> i-1)
+  runBCProf' c e (I (n+m):s)
+
+runBCProf' (SUB:c) e ((I n):(I m):s) = do
+  opBC
+  changeStack (\i -> i-1)
+  runBCProf' c e (I (max (m-n) 0):s)
+
+runBCProf' (ACCESS:i:c) e s = do
+  opBC
+  changeStack (+1)
+  runBCProf' c e ((e!!i):s)
+
+runBCProf' (CALL:c) e (v:(Fun e' c'):s) = do
+  opBC
+  changeStack (\n -> n-1)
+  runBCProf' c' (v:e') (RA e c:s)
+
+runBCProf' (TAILCALL:c) e (v:(Fun e' c'):s) = do
+  opBC
+  changeStack (\n -> n-2)
+  runBCProf' c' (v:e') s
+
+runBCProf' (FUNCTION:l:c) e s = do
+  opBC
+  countClos
+  changeStack (+1)
+  runBCProf' c' e (Fun e cf:s)
+  where c' = drop l c
+        cf = take l c
+
+runBCProf' (RETURN:_) _ (v:(RA e c):s) = do
+  opBC
+  changeStack (\n -> n-1)
+  runBCProf' c e (v:s)
+
+runBCProf' (SHIFT:c) e (v:s) = do
+  opBC
+  changeStack (\n -> n-1)
+  runBCProf' c (v:e) s
+
+runBCProf' (DROP:c) (v:e) s = do
+  opBC
+  runBCProf' c e s
+
+runBCProf' (PRINTN:c) e ((I n):s) = do
+  opBC
+  printFD4 (show n)
+  runBCProf' c e (I n:s)
+
+runBCProf' (PRINT:c) e s = do
+  opBC
+  let (msg,_:rest) = span (NULL /=) c
+  printFD4' $ bc2string msg
+  runBCProf' rest e s
+
+-- Esta regla se ejecuta inmediatamente 
+-- despues de la regla de function por ende e y e' son el mismo 
+runBCProf' (FIX:c) e ((Fun e' c'):s) = do
+  opBC
+  let efix = Fun efix c':e'
+  runBCProf' c e (Fun efix c':s)
+
+runBCProf' (CJUMP:n:c) e ((I z) : s) = do
+  opBC
+  changeStack (\i -> i-1)
+  if z == 0
+    then runBCProf' c e s
+    else runBCProf' (drop n c) e s
+
+runBCProf' (JUMP:n:c) e s = do
+  opBC
+  runBCProf' (drop n c) e s
+
+runBCProf' c _ s = failFD4 "Error en ejecución de la Macchina."
