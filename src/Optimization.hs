@@ -7,14 +7,14 @@ import Lang
 import Subst
 import Data.List (find)
 
-optimization :: MonadFD4 m => Int -> Module ->  m ()
-optimization 0 m = updateGlbDecls m
-optimization n m = do
-  m' <- moduleOptimization m
-  optimization (n-1) m'
+optimizeModule :: MonadFD4 m => Int -> Module ->  m ()
+optimizeModule 0 m = updateGlbDecls m
+optimizeModule n m = do
+  m' <- optimizeModuleStep m
+  optimizeModule (n-1) m'
 
-moduleOptimization :: MonadFD4 m => Module -> m Module
-moduleOptimization m = do
+optimizeModuleStep :: MonadFD4 m => Module -> m Module
+optimizeModuleStep m = do
   decls1 <- inline m
   decls2 <- dceDec decls1
   mapM constFoldingProp decls2

@@ -32,6 +32,7 @@ module MonadFD4 (
   getMode,
   getOpt,
   getProf,
+  getGlb,
   eraseLastFileDecls,
   failPosFD4,
   failFD4,
@@ -85,6 +86,9 @@ getMode = asks modo
 
 getProf :: MonadFD4 m => m Bool
 getProf = asks prof
+
+getGlb :: MonadFD4 m => m [Decl TTerm]
+getGlb = gets glb
 
 setInter :: MonadFD4 m => Bool -> m ()
 setInter b = modify (\s-> s {inter = b})

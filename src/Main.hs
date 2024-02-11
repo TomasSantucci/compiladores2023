@@ -92,8 +92,10 @@ main = execParser opts >>= go
               runOrFail (Conf opt Typecheck prof) $ mapM_ compileTypeCheck files
     go (CC,opt,prof,files) =
               runOrFail (Conf opt CC prof) $ mapM_ compileCC files
-    go (m,opt,prof,files) =
-              runOrFail (Conf opt m prof) $ mapM_ compileFile files
+    go (Eval,opt,prof,files) =
+              runOrFail (Conf opt Eval prof) $ mapM_ compileEval files
+--  go (m,opt,prof,files) =
+--            runOrFail (Conf opt m prof) $ mapM_ compileFile files
 
 runOrFail :: Conf -> FD4 a -> IO a
 runOrFail c m = do
@@ -133,45 +135,56 @@ loadFile f = do
     setLastFile filename
     parseIO filename program x
 
-compileCEK :: MonadFD4 m => FilePath -> m ()
-compileCEK f = do
+-- Elaboracion, chequeo de tipos y optimizacion de un archivo
+processFile :: MonadFD4 m => FilePath -> m Module
+processFile f = do
     decls <- loadFile f
     mapM_ handleDecl decls
-    s1 <- get
+    decls1 <- getGlb
     opt <- getOpt
-    when opt $ optimization 10 (glb s1)
-    s2 <- get
-    mapM_ evalAndUpdate (glb s2)
+    when opt $ optimizeModule 10 decls1
+    getGlb
+
+compileCEK :: MonadFD4 m => FilePath -> m ()
+compileCEK f = do
+    decls <- processFile f
+    mapM_ evalAndUpdate decls
     prof <- getProf
-    s3 <- get
-    when prof $ printFD4 $ "Maquina CEK ejectuto en " ++ show (stepsCEK s3) ++ " pasos"
+    s <- get
+    when prof $ printFD4 $ "Maquina CEK ejectuto en " ++ show (stepsCEK s) ++ " pasos"
   where
-    evalAndUpdate (Decl _ _ name _ body) = do t' <- evalCEK body
-                                              updateDecl name t'
-    getBody (Decl _ _ _ _ body) = body
+    evalAndUpdate d = do t' <- evalCEK (declBody d)
+                         updateDecl (declName d) t'
 
 compileCC :: MonadFD4 m => FilePath -> m ()
 compileCC f = do
-    decls <- loadFile f
-    mapM_ handleDecl decls
-    s1 <- get
-    opt <- getOpt
-    when opt $ optimization 10 (glb s1)
-    s2 <- get
-    let s = ir2C $ IrDecls $ runCC (glb s2)
+    decls <- processFile f
+    let s = ir2C $ IrDecls $ runCC decls
     liftIO $ writeFile "out.c" s
 
 compileTypeCheck :: MonadFD4 m => FilePath -> m ()
 compileTypeCheck f = do
     printFD4 ("Chequeando tipos de "++f)
-    decls <- loadFile f
-    mapM_ handleDecl decls
-    s1 <- get
-    opt <- getOpt
-    when opt $ optimization 10 (glb s1)
-    s2 <- get
-    mapM_ printDecls (glb s2)
+    decls <- processFile f
+    mapM_ printDecls decls
   where printDecls d = ppDecl d >>= printFD4
+
+bytecompileFile ::  MonadFD4 m => FilePath -> m ()
+bytecompileFile f = do
+    printFD4 ("Abriendo "++f++"...")
+    decls2 <- processFile f
+    bc <- bytecompileModule decls2
+    let f' = reverse (drop 3 (reverse f))
+    liftIO $ bcWrite bc (f' ++ "bc8")
+    printFD4 ("Compilado a bytecode correctamente en "++f'++"bc8")
+
+compileEval :: MonadFD4 m => FilePath -> m ()
+compileEval f = do
+    decls <- processFile f
+    mapM_ evalAndUpdate decls
+  where
+    evalAndUpdate d = do t' <- eval (declBody d)
+                         updateDecl (declName d) t'
 
 compileFile ::  MonadFD4 m => FilePath -> m ()
 compileFile f = do
@@ -181,20 +194,6 @@ compileFile f = do
     decls <- loadFile f
     mapM_ handleDecl decls
     setInter i
-
-bytecompileFile ::  MonadFD4 m => FilePath -> m ()
-bytecompileFile f = do
-    printFD4 ("Abriendo "++f++"...")
-    decls <- loadFile f
-    mapM_ handleDecl decls
-    s <- get
-    opt <- getOpt
-    when opt $ optimization 10 (glb s)
-    s1 <- get
-    bc <- bytecompileModule (glb s1)
-    let f' = reverse (drop 3 (reverse f))
-    liftIO $ bcWrite bc (f' ++ "bc8")
-    printFD4 ("Compilado a bytecode correctamente en "++f'++"bc8")
 
 runVMFile ::  MonadFD4 m => FilePath -> m ()
 runVMFile f = do
@@ -212,11 +211,6 @@ parseIO filename p x = case runP p x filename of
                   Left e  -> throwError (ParseErr e)
                   Right r -> return r
 
-evalDecl :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
-evalDecl (Decl p r x ty e) = do
-    e' <- eval e
-    return (Decl p r x ty e')
-
 handleDecl ::  MonadFD4 m => SDecl -> m ()
 handleDecl dec = do
   dec' <- elabDecl dec
@@ -229,25 +223,22 @@ handleDecl' d = do
   m <- getMode
   case m of
     InteractiveCEK -> do
-        (Decl p r x ty tt) <- tcDecl d
-        te <- evalCEK tt
-        addDecl (Decl p r x ty te)
+        tcd <- tcDecl d
+        te <- evalCEK (declBody tcd)
+        addDecl $ tcd {declBody = te}
     Interactive -> do
-        (Decl p r x ty tt) <- tcDecl d
-        te <- eval tt
-        addDecl (Decl p r x ty te)
+        tcd <- tcDecl d
+        te <- eval (declBody tcd)
+        addDecl $ tcd {declBody = te}
     Typecheck -> do
-        f <- getLastFile
-        td <- tcDecl d
-        addDecl td
+        tcd <- tcDecl d
+        addDecl tcd
     Eval -> do
-        td <- tcDecl d
-        -- td' <- if opt then optimizeDecl td else return td
-        ed <- evalDecl td
-        addDecl ed
+        tcd <- tcDecl d
+        addDecl tcd
     CEK -> do
-        (Decl p r x ty tt) <- tcDecl d
-        addDecl (Decl p r x ty tt)
+        tcd <- tcDecl d
+        addDecl tcd
     Bytecompile -> do
         tcd <- tcDecl d
         addDecl tcd
