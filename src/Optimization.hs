@@ -167,20 +167,16 @@ inlineTerm [] t = return t
 inlineTerm decs t@(App _ (V _ (Global n)) t1@(Const ty (CNat m))) = do
     case find (\d -> declName d == n) decs of
         Just (Decl _ _ _ _ (Lam _ _ _ ct)) -> inlineTerm decs (subst t1 ct)
-        Just (Decl _ _ _ _ (Fix {})) -> return t
-        Nothing -> return t
-        _ -> failFD4 "Error haciendo inline expansion."
+        _ -> return t
 
 inlineTerm decs t@(App i (V p (Global n)) t1) = do
     case find (\d -> declName d == n) decs of
         Just (Decl _ _ _ _ (Lam _ x _ sc)) -> do
             t1' <- inlineTerm decs t1
             return $ Let i x (getTy t1) t1' sc
-        Just (Decl _ _ _ _ (Fix {})) -> do
+        _ -> do
             t1' <- inlineTerm decs t1
             return $ App i (V p (Global n)) t1'
-        Nothing -> return t
-        _ -> failFD4 "Error haciendo inline expansion."
 
 inlineTerm decs t@(V _ (Global n)) =
     case find (\d -> declName d == n) decs of
