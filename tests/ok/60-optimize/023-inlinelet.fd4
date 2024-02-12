@@ -1,0 +1,5 @@
+let id (x:Nat) : Nat = x 
+
+let f : Nat->Nat = let g:Nat->Nat = fun (y:Nat) -> y in g
+
+let ret:Nat = print "x=" (f (id 1))
