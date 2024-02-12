@@ -160,7 +160,7 @@ compileCC :: MonadFD4 m => FilePath -> m ()
 compileCC f = do
     decls <- processFile f
     let s = ir2C $ IrDecls $ runCC decls
-    liftIO $ writeFile (f ++ "out.c") s
+    liftIO $ writeFile (f ++ ".c") s
 
 compileTypeCheck :: MonadFD4 m => FilePath -> m ()
 compileTypeCheck f = do

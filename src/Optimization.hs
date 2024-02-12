@@ -149,19 +149,25 @@ countNodes (IfZ _ t1 t2 t3) = countNodes t1 + countNodes t2 + countNodes t3 + 1
 countNodes (Let _ x _ def (Sc1 body)) = countNodes def + countNodes body + 1
 
 inline :: MonadFD4 m => Module -> m Module
-inline m = go m []
-  where go :: MonadFD4 m => Module -> [Decl TTerm] -> m Module
-        go [] _ = return []
-        go (dec:decs) inlineCandidates = do
-            body' <- inlineTerm inlineCandidates (declBody dec)
-            let dec' = dec {declBody = body'}
-                inlineCandidates' = if countNodes body' < 15
-                                    then dec' : inlineCandidates
-                                    else inlineCandidates
-            decs' <- go decs inlineCandidates'
+inline m = go m [] [] where
+  go :: MonadFD4 m => Module -> [Decl TTerm] -> [Name] -> m Module
+  go [] _ ns = return []
+  go (dec:decs) inlineCandidates ns =
+      let initNames = declName dec : ns
+          (body',ns') = runState (inlineTerm inlineCandidates (declBody dec)) initNames
+          dec' = dec {declBody = body'}
+          inlineCandidates' = if countNodes body' < 15
+                              then dec' : inlineCandidates
+                              else inlineCandidates
+      in do decs' <- go decs inlineCandidates' ns'
             return $ dec' : decs'
 
-inlineTerm :: MonadFD4 m => Module -> TTerm -> m TTerm 
+addNames :: [Name] -> State [Name] ()
+addNames n = do
+  ns <- get
+  put (n++ns)
+
+inlineTerm :: Module -> TTerm -> State [Name] TTerm
 inlineTerm [] t = return t
 
 inlineTerm decs t@(App _ (V _ (Global n)) t1@(Const ty (CNat m))) = do
@@ -173,7 +179,8 @@ inlineTerm decs t@(App i (V p (Global n)) t1) = do
     case find (\d -> declName d == n) decs of
         Just (Decl _ _ _ _ (Lam _ x _ sc)) -> do
             t1' <- inlineTerm decs t1
-            return $ Let i x (getTy t1) t1' sc
+            ns <- get
+            return $ Let i (freshen ns x) (getTy t1) t1' sc
         _ -> do
             t1' <- inlineTerm decs t1
             return $ App i (V p (Global n)) t1'
@@ -183,4 +190,40 @@ inlineTerm decs t@(V _ (Global n)) =
         Just (Decl _ _ _ _ t') -> return t'
         Nothing -> return t
 
-inlineTerm decs t = applyRec t (inlineTerm decs)
+inlineTerm decs t@(Const {}) = return t
+inlineTerm decs t@(V {}) = return t
+inlineTerm decs (Lam i n ty sc) = do
+    addNames [n]
+    t' <- inlineTerm decs $ open n sc
+    return $ Lam i n ty $ close n t'
+
+inlineTerm decs (App i t1 t2)= do
+    t1' <- inlineTerm decs t1
+    t2' <- inlineTerm decs t2
+    return $ App i t1' t2'
+
+inlineTerm decs (Print i s t) = do
+    t' <- inlineTerm decs t
+    return $ Print i s t'
+
+inlineTerm decs (Fix i n nty m mty sc) = do
+    addNames [n,m]
+    t' <- inlineTerm decs $ open2 n m sc
+    return $ Fix i n nty m mty $ close2 n m t'
+
+inlineTerm decs (BinaryOp i op t1 t2) = do
+    t1' <- inlineTerm decs t1
+    t2' <- inlineTerm decs t2
+    return $ BinaryOp i op t1' t2'
+
+inlineTerm decs (IfZ i t1 t2 t3) = do
+    t1' <- inlineTerm decs t1
+    t2' <- inlineTerm decs t2
+    t3' <- inlineTerm decs t3
+    return $ IfZ i t1' t2' t3'
+
+inlineTerm decs (Let i n ty t1 sc) = do
+    addNames [n]
+    t1' <- inlineTerm decs t1
+    t2' <- inlineTerm decs $ open n sc
+    return $ Let i n ty t1' $ close n t2'
