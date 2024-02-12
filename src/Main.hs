@@ -160,11 +160,10 @@ compileCC :: MonadFD4 m => FilePath -> m ()
 compileCC f = do
     decls <- processFile f
     let s = ir2C $ IrDecls $ runCC decls
-    liftIO $ writeFile "out.c" s
+    liftIO $ writeFile (f ++ "out.c") s
 
 compileTypeCheck :: MonadFD4 m => FilePath -> m ()
 compileTypeCheck f = do
-    printFD4 ("Chequeando tipos de "++f)
     decls <- processFile f
     mapM_ printDecls decls
   where printDecls d = ppDecl d >>= printFD4

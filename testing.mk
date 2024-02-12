@@ -3,6 +3,7 @@ TESTDIRS += tests/ok/10-sugar
 TESTDIRS += tests/ok/20-tysym
 TESTDIRS += tests/ok/30-cek
 TESTDIRS += tests/ok/40-bytecode
+TESTDIRS += tests/ok/50-cc
 TESTDIRS += tests/ok/60-optimize
 
 TESTS	:= $(shell find $(TESTDIRS) -name '*.fd4' -type f | sort)
@@ -12,8 +13,10 @@ TESTS	:= $(shell find $(TESTDIRS) -name '*.fd4' -type f | sort)
 # (~30x). Además, encontralo nos sirve para marcar la dependencia, y no
 # volver a correr los tests si el compilador no cambió (pero sí correr
 # la VM si cambió la VM, etc).
-EXE	:= $(shell cabal exec whereis compiladores2023 | awk '{print $$2};')
-VM	:= ./vm/macc
+EXE	   := $(shell cabal exec whereis compiladores2023 | awk '{print $$2};')
+VM	   := ./vm/macc
+CC     := gcc
+CFLAGS := -lgc
 
 EXTRAFLAGS	:=
 #EXTRAFLAGS	+= --optimize
@@ -24,11 +27,12 @@ CHECK	+= $(patsubst %,%.check_eval,$(TESTS))
 CHECK	+= $(patsubst %,%.check_cek,$(TESTS))
 CHECK	+= $(patsubst %,%.check_bc8_h,$(TESTS))
 CHECK	+= $(patsubst %,%.check_bc8,$(TESTS))
-# CHECK	+= $(patsubst %,%.check_eval_opt,$(TESTS))
+CHECK	+= $(patsubst %,%.check_cc,$(TESTS))
+CHECK	+= $(patsubst %,%.check_eval_opt,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_opt,$(TESTS))
 
 # Ejemplo: así se puede apagar un test en particular.
-# CHECK	:= $(filter-out tests/correctos/grande.fd4.check_bc8,$(CHECK))
+CHECK	:= $(filter-out tests/ok/40-bytecode/004-inf.%,$(CHECK))
 
 # Esta regla corre todos los tests (por sus dependencias) y luego
 # imprime un mensaje.
@@ -98,6 +102,21 @@ accept: $(patsubst %,%.accept,$(TESTS))
 	$(Q)touch $@
 	@echo "OK	BC8	$(patsubst %.out,%,$<)"
 
+# Generar codigo C
+%.c.out: % $(EXE)
+	$(Q)$(EXE) $(EXTRAFLAGS) --cc $< >/dev/null
+
+# Compilar y ejecutar el archivo C
+%.actual_out_cc: %.c.out runtime.c
+	$(Q)$(CC) runtime.c $(CFLAGS) $(patsubst %.out,%,$<) -o $<
+	$(Q)./$< > $@
+
+# Comparación de resultados.
+%.check_cc: %.out %.actual_out_cc
+	$(Q)diff -u $^
+	$(Q)touch $@
+	@echo "OK	CC	$(patsubst %.out,%,$<)"
+
 # Idem pero para Macchina en Haskell.
 %.fd4.actual_out_bc8_h: %.bc8 $(EXE)
 	$(Q)$(EXE) $(EXTRAFLAGS) --runVM $< > $@
@@ -140,6 +159,8 @@ accept: $(patsubst %,%.accept,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_bc8_h,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_eval_opt,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_opt_out,$(TESTS))
+.SECONDARY: $(patsubst %,%.actual_out_cc,$(TESTS))
+.SECONDARY: $(patsubst %,%.c.out,$(TESTS))
 .SECONDARY: $(patsubst %.fd4,%.bc8,$(TESTS))
 
 .PHONY: test_all accept
