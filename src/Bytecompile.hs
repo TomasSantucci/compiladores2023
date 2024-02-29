@@ -142,7 +142,7 @@ bct (IfZ _ c t e) = do
   cc <- bcc c
   ct <- bct t
   ce <- bct e
-  return $ cc ++ [CJUMP, length ct + 2] ++ ct ++ [JUMP,length ce] ++ ce
+  return $ cc ++ [CJUMP, length ct] ++ ct ++ ce
 
 bct (Let _ _ _ def (Sc1 body)) = do
   cdef <- bcc def
